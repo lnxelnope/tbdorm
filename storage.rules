@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ฟังก์ชันตรวจสอบการเข้าสู่ระบบ
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ฟังก์ชันตรวจสอบว่าเป็นเจ้าของหอพักหรือไม่
+    function isDormitoryOwner(dormitoryId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/dormitories/$(dormitoryId)) &&
+        firestore.get(/databases/(default)/documents/dormitories/$(dormitoryId)).data.ownerUid == request.auth.uid;
+    }
+
+    // ฟังก์ชันตรวจสอบว่าเป็นผู้เช่าหรือไม่
+    function isTenant(dormitoryId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/tenants/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/tenants/$(request.auth.uid)).data.dormitoryId == dormitoryId;
+    }
+
+    // ฟังก์ชันตรวจสอบว่าเป็นผู้ดูแลระบบหรือไม่
+    function isAdmin() {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid));
+    }
+
+    // กฎสำหรับรูปภาพการแจ้งซ่อม
+    match /maintenance/{fileName} {
+      // อ่านรูปภาพ: เจ้าของหอพัก, ผู้เช่า (เฉพาะของตัวเอง), และผู้ดูแลระบบ
+      allow read: if isAuthenticated();
+
+      // อัพโหลดรูปภาพ: ผู้เช่าและเจ้าของหอพัก
+      allow create: if isAuthenticated() &&
+        // ตรวจสอบขนาดไฟล์ (ไม่เกิน 5MB)
+        request.resource.size <= 5 * 1024 * 1024 &&
+        // ตรวจสอบประเภทไฟล์ (เฉพาะรูปภาพ)
+        request.resource.contentType.matches('image/.*');
+
+      // ลบรูปภาพ: เจ้าของหอพักและผู้ดูแลระบบ
+      allow delete: if isAdmin();
+    }
+  }
+} 

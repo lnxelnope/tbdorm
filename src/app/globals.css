@@ -31,3 +31,48 @@ body {
     text-wrap: balance;
   }
 }
+
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="tel"],
+input[type="password"],
+textarea,
+select {
+  background-color: #fff9e6;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  width: 100%;
+  transition: all 0.2s ease-in-out;
+}
+
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="email"]:hover,
+input[type="tel"]:hover,
+input[type="password"]:hover,
+textarea:hover,
+select:hover {
+  border-color: #d1d5db;
+  background-color: #fff5cc;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #9ca3af;
+  background-color: #fff5cc;
+  box-shadow: 0 0 0 2px rgba(156, 163, 175, 0.2);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+  opacity: 0.8;
+}

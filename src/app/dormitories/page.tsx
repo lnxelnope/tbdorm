@@ -1,0 +1,250 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { Building2, Plus, Settings, Edit, Trash2, Home, Layers } from "lucide-react";
+import { toast } from "sonner";
+import { getDormitory, queryDormitories, deleteDormitory } from "@/lib/firebase/firebaseUtils";
+import { Dormitory, RoomType } from "@/types/dormitory";
+
+export default function DormitoriesPage() {
+  const [dormitories, setDormitories] = useState<Dormitory[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const fetchDormitories = async () => {
+      try {
+        console.log("Fetching dormitories...");
+        const result = await queryDormitories();
+        console.log("Query result:", result);
+        if (result.success && result.data) {
+          console.log("Setting dormitories:", result.data);
+          setDormitories(result.data || []);
+        }
+      } catch (error) {
+        console.error("Error fetching dormitories:", error);
+        toast.error("ไม่สามารถโหลดข้อมูลหอพักได้");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDormitories();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("คุณต้องการลบหอพักนี้ใช่หรือไม่?")) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      const result = await deleteDormitory(id);
+      if (result.success) {
+        setDormitories(dormitories.filter((d) => d.id !== id));
+        toast.success("ลบหอพักเรียบร้อย");
+      } else {
+        toast.error("ไม่สามารถลบหอพักได้");
+      }
+    } catch (error) {
+      console.error("Error deleting dormitory:", error);
+      toast.error("เกิดข้อผิดพลาดในการลบหอพัก");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">รายการหอพัก</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            จัดการข้อมูลหอพักทั้งหมดของคุณ
+          </p>
+        </div>
+        <Link
+          href="/dormitories/new"
+          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          เพิ่มหอพัก
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {dormitories.map((dormitory) => (
+          <div
+            key={dormitory.id}
+            className="bg-white overflow-hidden shadow rounded-lg border"
+          >
+            <div className="relative h-48">
+              <img
+                src={dormitory.images[0] || "/images/placeholder-dormitory.jpg"}
+                alt={dormitory.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = "https://placehold.co/600x400?text=No+Image";
+                }}
+              />
+              <div className="absolute top-2 right-2">
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    dormitory.status === "active"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {dormitory.status === "active" ? "เปิดให้บริการ" : "ปิดปรับปรุง"}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {dormitory.name}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/dormitories/${dormitory.id}/edit`}
+                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                  >
+                    <Edit className="w-5 h-5" />
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(dormitory.id)}
+                    disabled={isDeleting}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">{dormitory.address}</p>
+              <div className="mt-4 flex items-center text-sm text-gray-500">
+                <Home className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
+                <span>
+                  {dormitory.totalRooms} ห้อง
+                </span>
+                <span className="mx-1">•</span>
+                <Layers className="flex-shrink-0 mx-1.5 h-5 w-5 text-gray-400" />
+                <span>
+                  {dormitory.totalFloors} ชั้น
+                </span>
+              </div>
+              <div className="mt-4">
+                <div className="flex flex-wrap gap-2">
+                  {dormitory.facilities?.map((facility) => (
+                    <span
+                      key={facility}
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    >
+                      {facility}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-gray-100 pt-4">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">ราคาและค่าบริการ</h4>
+                <div className="space-y-2 text-sm text-gray-600">
+                  {/* ราคาห้องพัก */}
+                  {dormitory.config?.roomTypes && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-gray-500">ราคาห้องพัก:</div>
+                      {Object.values(dormitory.config.roomTypes)
+                        .filter(type => type.isDefault)
+                        .map(type => (
+                          <div key={type.id} className="ml-2">
+                            • {type.name}: {type.basePrice.toLocaleString()} บาท/เดือน
+                          </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ค่าบริการเพิ่มเติม */}
+                  {dormitory.config?.additionalFees && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-gray-500">ค่าบริการเพิ่มเติม:</div>
+                      {dormitory.config.additionalFees.airConditioner !== null && (
+                        <div className="ml-2">
+                          • ค่าแอร์: {dormitory.config.additionalFees.airConditioner.toLocaleString()} บาท/เดือน
+                        </div>
+                      )}
+                      {dormitory.config.additionalFees.parking !== null && (
+                        <div className="ml-2">
+                          • ค่าที่จอดรถ: {dormitory.config.additionalFees.parking.toLocaleString()} บาท/เดือน
+                        </div>
+                      )}
+                      {dormitory.config.additionalFees.floorRates && Object.entries(dormitory.config.additionalFees.floorRates)
+                        .filter(([_, value]) => value !== null && value !== 0)
+                        .map(([floor, value]) => value !== null && (
+                          <div key={floor} className="ml-2">
+                            • ชั้น {floor}: {value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString()} บาท
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* ค่าน้ำค่าไฟ */}
+                  {dormitory.config?.additionalFees?.utilities && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-gray-500">ค่าน้ำค่าไฟ:</div>
+                      {dormitory.config.additionalFees.utilities.water?.perPerson !== null && (
+                        <div className="ml-2">
+                          • ค่าน้ำ: {dormitory.config.additionalFees.utilities.water.perPerson?.toLocaleString()} บาท/คน/เดือน
+                        </div>
+                      )}
+                      {dormitory.config.additionalFees.utilities.electric?.unit !== null && (
+                        <div className="ml-2">
+                          • ค่าไฟ: {dormitory.config.additionalFees.utilities.electric.unit?.toLocaleString()} บาท/หน่วย
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end space-x-3">
+                <Link
+                  href={`/dormitories/${dormitory.id}`}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-500"
+                >
+                  ดูรายละเอียด
+                </Link>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Link
+                    href={`/dormitories/${dormitory.id}/config`}
+                    className="flex items-center justify-center px-3 py-1.5 text-sm font-medium text-gray-600 border-2 border-gray-600 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+                  >
+                    กำหนดราคา
+                  </Link>
+                  <Link
+                    href={`/dormitories/${dormitory.id}/rooms`}
+                    className="flex items-center justify-center px-3 py-1.5 text-sm font-medium text-green-600 border-2 border-green-600 rounded-lg hover:bg-green-50 transition-colors duration-150"
+                  >
+                    จัดการห้องพัก
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+} 
