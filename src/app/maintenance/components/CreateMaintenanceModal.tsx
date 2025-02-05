@@ -6,16 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Dialog } from '@headlessui/react';
 import { toast } from 'sonner';
-import { Upload, X } from 'lucide-react';
-import Image from 'next/image';
 import { createMaintenanceRequest, uploadMaintenanceImage } from '@/lib/firebase/maintenanceUtils';
-import { useAuth } from '@/lib/hooks/useAuth';
-
-interface CreateMaintenanceModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-}
 
 const schema = z.object({
   title: z.string().min(1, 'กรุณาระบุหัวข้อ'),
@@ -24,6 +15,12 @@ const schema = z.object({
   priority: z.enum(['high', 'medium', 'low']),
 });
 
+interface CreateMaintenanceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
 type FormData = z.infer<typeof schema>;
 
 export default function CreateMaintenanceModal({
@@ -31,85 +28,57 @@ export default function CreateMaintenanceModal({
   onClose,
   onSuccess,
 }: CreateMaintenanceModalProps) {
-  const { user } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
     handleSubmit,
-    reset,
     formState: { errors },
+    reset
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      priority: 'medium',
-    },
+    resolver: zodResolver(schema)
   });
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length + selectedImages.length > 5) {
-      toast.error('สามารถอัพโหลดรูปได้สูงสุด 5 รูป');
-      return;
-    }
-
-    const newFiles: File[] = [];
-    const newPreviewUrls: string[] = [];
-
-    files.forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        newFiles.push(file);
-        newPreviewUrls.push(URL.createObjectURL(file));
+    const files = event.target.files;
+    if (files) {
+      const newImages = Array.from(files);
+      if (selectedImages.length + newImages.length > 5) {
+        toast.error('สามารถอัพโหลดรูปได้สูงสุด 5 รูป');
+        return;
       }
-    });
-
-    setSelectedImages([...selectedImages, ...newFiles]);
-    setPreviewUrls([...previewUrls, ...newPreviewUrls]);
+      setSelectedImages([...selectedImages, ...newImages]);
+    }
   };
 
   const removeImage = (index: number) => {
-    const newImages = [...selectedImages];
-    const newPreviewUrls = [...previewUrls];
-    
-    URL.revokeObjectURL(newPreviewUrls[index]);
-    newImages.splice(index, 1);
-    newPreviewUrls.splice(index, 1);
-    
-    setSelectedImages(newImages);
-    setPreviewUrls(newPreviewUrls);
+    setSelectedImages(selectedImages.filter((_, i) => i !== index));
   };
 
   const onSubmit = async (data: FormData) => {
-    if (!user) {
-      toast.error('กรุณาเข้าสู่ระบบก่อนแจ้งซ่อม');
-      return;
-    }
-
     try {
       setIsSubmitting(true);
 
       // อัพโหลดรูปภาพ
       const imageUrls = await Promise.all(
-        selectedImages.map((file) => uploadMaintenanceImage(file))
+        selectedImages.map(file => uploadMaintenanceImage(file))
       );
 
       // สร้างคำขอแจ้งซ่อม
       const result = await createMaintenanceRequest({
         ...data,
-        requesterUid: user.uid,
-        requesterName: user.displayName || 'ไม่ระบุชื่อ',
-        images: imageUrls.filter((url): url is string => typeof url === 'string'),
+        images: imageUrls.filter((url): url is string => url !== null),
         status: 'pending',
+        requesterUid: 'user-id', // TODO: ใช้ ID จริงของผู้ใช้
+        requesterName: 'User Name', // TODO: ใช้ชื่อจริงของผู้ใช้
         createdAt: new Date().toISOString(),
       });
 
       if (result.success) {
         reset();
         setSelectedImages([]);
-        setPreviewUrls([]);
         onSuccess();
       } else {
         throw new Error(result.error);
@@ -125,92 +94,73 @@ export default function CreateMaintenanceModal({
   return (
     <Dialog
       open={isOpen}
-      onClose={onClose}
-      className="fixed inset-0 z-10 overflow-y-auto"
+      onClose={() => {
+        if (!isSubmitting) onClose();
+      }}
+      className="relative z-50"
     >
-      <div className="flex min-h-screen items-center justify-center">
-        <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
 
-        <div className="relative mx-auto w-full max-w-md rounded-lg bg-white p-6">
-          <div className="mb-4">
-            <Dialog.Title className="text-lg font-medium text-gray-900">
-              แจ้งซ่อมใหม่
-            </Dialog.Title>
-            <Dialog.Description className="mt-1 text-sm text-gray-500">
-              กรอกรายละเอียดการแจ้งซ่อมของคุณ
-            </Dialog.Description>
-          </div>
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="w-full max-w-md rounded bg-white p-6">
+          <Dialog.Title className="text-lg font-medium mb-4">
+            แจ้งซ่อมใหม่
+          </Dialog.Title>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                หัวข้อ
-              </label>
+              <label className="block text-sm font-medium mb-1">หัวข้อ</label>
               <input
                 type="text"
                 {...register('title')}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                className="w-full px-3 py-2 border rounded-md"
               />
               {errors.title && (
-                <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
+                <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                รายละเอียด
-              </label>
+              <label className="block text-sm font-medium mb-1">รายละเอียด</label>
               <textarea
                 {...register('description')}
                 rows={3}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                className="w-full px-3 py-2 border rounded-md"
               />
               {errors.description && (
-                <p className="mt-1 text-sm text-red-600">
-                  {errors.description.message}
-                </p>
+                <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                หมายเลขห้อง
-              </label>
+              <label className="block text-sm font-medium mb-1">หมายเลขห้อง</label>
               <input
                 type="text"
                 {...register('roomNumber')}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                className="w-full px-3 py-2 border rounded-md"
               />
               {errors.roomNumber && (
-                <p className="mt-1 text-sm text-red-600">
-                  {errors.roomNumber.message}
-                </p>
+                <p className="text-red-500 text-sm mt-1">{errors.roomNumber.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                ความเร่งด่วน
-              </label>
+              <label className="block text-sm font-medium mb-1">ความเร่งด่วน</label>
               <select
                 {...register('priority')}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                className="w-full px-3 py-2 border rounded-md"
               >
-                <option value="high">สูง</option>
-                <option value="medium">ปานกลาง</option>
                 <option value="low">ต่ำ</option>
+                <option value="medium">ปานกลาง</option>
+                <option value="high">สูง</option>
               </select>
               {errors.priority && (
-                <p className="mt-1 text-sm text-red-600">
-                  {errors.priority.message}
-                </p>
+                <p className="text-red-500 text-sm mt-1">{errors.priority.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                รูปภาพ (สูงสุด 5 รูป)
-              </label>
+              <label className="block text-sm font-medium mb-1">รูปภาพ (สูงสุด 5 รูป)</label>
               <input
                 type="file"
                 ref={fileInputRef}
@@ -222,30 +172,26 @@ export default function CreateMaintenanceModal({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-1 flex w-full items-center justify-center rounded-md border-2 border-dashed border-gray-300 px-6 py-4 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
               >
-                <Upload className="mr-2 h-5 w-5 text-gray-400" />
-                <span className="text-sm text-gray-600">อัพโหลดรูปภาพ</span>
+                เลือกรูปภาพ
               </button>
 
-              {previewUrls.length > 0 && (
-                <div className="mt-4 grid grid-cols-3 gap-4">
-                  {previewUrls.map((url, index) => (
+              {selectedImages.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {selectedImages.map((file, index) => (
                     <div key={index} className="relative">
-                      <div className="relative h-24 w-full overflow-hidden rounded-lg">
-                        <Image
-                          src={url}
-                          alt={`Preview ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={`Preview ${index + 1}`}
+                        className="h-20 w-20 object-cover rounded-md"
+                      />
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
-                        className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-sm"
                       >
-                        <X className="h-4 w-4" />
+                        ×
                       </button>
                     </div>
                   ))}
@@ -253,24 +199,25 @@ export default function CreateMaintenanceModal({
               )}
             </div>
 
-            <div className="mt-6 flex justify-end space-x-3">
+            <div className="flex justify-end gap-4">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                disabled={isSubmitting}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 {isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
             </div>
           </form>
-        </div>
+        </Dialog.Panel>
       </div>
     </Dialog>
   );
