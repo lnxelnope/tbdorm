@@ -77,70 +77,70 @@ export default function CreateBillPage({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRoom) {
-      toast.error("กรุณาเลือกห้อง");
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!selectedRoom) {
+    toast.error("กรุณาเลือกห้อง");
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+    const room = rooms.find((r) => r.id === selectedRoom);
+    const tenant = tenants.find((t) => t.roomNumber === room?.number);
+    if (!room || !tenant) {
+      toast.error("ไม่พบข้อมูลห้องหรือผู้เช่า");
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-      const room = rooms.find((r) => r.id === selectedRoom);
-      const tenant = tenants.find((t) => t.roomNumber === room?.number);
-      if (!room || !tenant) {
-        toast.error("ไม่พบข้อมูลห้องหรือผู้เช่า");
-        return;
-      }
-
-      const totalAmount = formData.items.reduce(
-        (sum, item) => sum + item.amount,
-        0
-      );
+    const totalAmount = formData.items.reduce(
+      (sum, item) => sum + item.amount,
+      0
+    );
 
       const billData = {
-        dormitoryId: params.id,
-        roomId: room.number,
-        tenantId: tenant.id,
-        month: formData.month,
-        year: formData.year,
-        dueDate: new Date(formData.dueDate),
+      dormitoryId: params.id,
+      roomId: room.number,
+      tenantId: tenant.id,
+      month: formData.month,
+      year: formData.year,
+      dueDate: new Date(formData.dueDate),
         status: "pending" as const,
-        items: formData.items,
-        totalAmount,
-        paidAmount: 0,
-        remainingAmount: totalAmount,
-        payments: [],
-        notificationsSent: {
-          initial: false,
-          reminder: false,
-          overdue: false,
-        },
-      };
+      items: formData.items,
+      totalAmount,
+      paidAmount: 0,
+      remainingAmount: totalAmount,
+      payments: [],
+      notificationsSent: {
+        initial: false,
+        reminder: false,
+        overdue: false,
+      },
+    };
 
-      const result = await createBill(params.id, billData);
-      if (result.success) {
-        // ส่งแจ้งเตือนผ่าน LINE
-        const lineConfig = await getLineNotifyConfig(params.id);
-        if (lineConfig.success && lineConfig.data) {
-          await sendBillCreatedNotification(lineConfig.data, {
-            ...billData,
-            id: result.id!,
+    const result = await createBill(params.id, billData);
+    if (result.success) {
+      // ส่งแจ้งเตือนผ่าน LINE
+      const lineConfig = await getLineNotifyConfig(params.id);
+      if (lineConfig.success && lineConfig.data) {
+        await sendBillCreatedNotification(lineConfig.data, {
+          ...billData,
+          id: result.id!,
             createdAt: new Date(),
             updatedAt: new Date(),
-          });
-        }
-
-        toast.success("สร้างบิลเรียบร้อย");
-        router.push(`/dormitories/${params.id}/bills`);
+        });
       }
-    } catch (error) {
-      console.error("Error creating bill:", error);
-      toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
-    } finally {
-      setIsSubmitting(false);
+
+      toast.success("สร้างบิลเรียบร้อย");
+      router.push(`/dormitories/${params.id}/bills`);
     }
-  };
+  } catch (error) {
+    console.error("Error creating bill:", error);
+    toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const addItem = () => {
     setFormData({
@@ -185,7 +185,7 @@ export default function CreateBillPage({
             กลับ
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">สร้างบิลใหม่</h1>
+        <h1 className="text-2xl font-semibold text-white">สร้างบิลใหม่</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -272,7 +272,7 @@ export default function CreateBillPage({
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">รายการ</h3>
+                <h3 className="text-lg font-medium text-white">รายการ</h3>
                 <button
                   type="button"
                   onClick={addItem}
@@ -319,7 +319,7 @@ export default function CreateBillPage({
               ))}
 
               <div className="text-right">
-                <p className="text-lg font-medium text-gray-900">
+                <p className="text-lg font-medium text-white">
                   รวมทั้งสิ้น:{" "}
                   {formData.items
                     .reduce((sum, item) => sum + item.amount, 0)

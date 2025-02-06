@@ -135,7 +135,7 @@ export default function EditTenantModal({
             <div className="grid grid-cols-2 gap-6">
               {/* ข้อมูลผู้เช่า */}
               <div className="space-y-4">
-                <h3 className="font-medium text-gray-900">ข้อมูลผู้เช่า</h3>
+                <h3 className="font-medium text-white">ข้อมูลผู้เช่า</h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     ชื่อ-นามสกุล <span className="text-red-500">*</span>
@@ -225,7 +225,7 @@ export default function EditTenantModal({
 
               {/* ข้อมูลการเช่า */}
               <div className="space-y-4">
-                <h3 className="font-medium text-gray-900">ข้อมูลการเช่า</h3>
+                <h3 className="font-medium text-white">ข้อมูลการเช่า</h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     หอพัก <span className="text-red-500">*</span>
@@ -313,7 +313,7 @@ export default function EditTenantModal({
 
             {/* ผู้ติดต่อฉุกเฉิน */}
             <div className="space-y-4">
-              <h3 className="font-medium text-gray-900">ผู้ติดต่อฉุกเฉิน <span className="text-gray-500">(ไม่จำเป็น)</span></h3>
+              <h3 className="font-medium text-white">ผู้ติดต่อฉุกเฉิน <span className="text-gray-500">(ไม่จำเป็น)</span></h3>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">

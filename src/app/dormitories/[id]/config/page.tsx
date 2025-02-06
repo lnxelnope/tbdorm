@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Building2, Plus, Save, Trash2, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/firebase";
+import { db } from "@/lib/firebase/firebaseConfig";
 import { toast } from "sonner";
 import { RoomType } from "@/types/dormitory";
 
@@ -30,26 +30,12 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  
-  // ค่าเริ่มต้นสำหรับ config ใหม่
-  const initialConfig: Config = {
-    roomTypes: {
-      "1": {
-        id: "1",
-        name: "ห้องมาตรฐาน",
-        basePrice: 0,
-        isDefault: true,
-        airConditionerFee: 500,
-        parkingFee: 500,
-      }
-    },
+  const [config, setConfig] = useState<Config>({
+    roomTypes: {},
     additionalFees: {
-      airConditioner: 500,
-      parking: 500,
-      floorRates: {
-        "1": 0,
-        "2": -500,
-      },
+      airConditioner: null,
+      parking: null,
+      floorRates: {},
       utilities: {
         water: {
           perPerson: null,
@@ -59,9 +45,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         },
       },
     },
-  };
-  
-  const [config, setConfig] = useState<Config>(initialConfig);
+  });
 
   // แปลง roomTypes object เป็น array
   const roomTypesArray = Object.entries(config.roomTypes).map(([roomId, type]) => ({
@@ -73,37 +57,25 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       try {
         const docRef = doc(db, "dormitories", params.id);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.config) {
-            // ถ้ามีข้อมูล config อยู่แล้ว
-            setConfig({
-              roomTypes: data.config.roomTypes || {},
-              additionalFees: {
-                airConditioner: data.config.additionalFees?.airConditioner ?? 500,
-                parking: data.config.additionalFees?.parking ?? 500,
-                floorRates: data.config.additionalFees?.floorRates || {
-                  "1": 0,
-                  "2": -500,
+          setConfig(data.config || {
+            roomTypes: {},
+            additionalFees: {
+              airConditioner: null,
+              parking: null,
+              floorRates: {},
+              utilities: {
+                water: {
+                  perPerson: null,
                 },
-                utilities: {
-                  water: {
-                    perPerson: data.config.additionalFees?.utilities?.water?.perPerson ?? null,
-                  },
-                  electric: {
-                    unit: data.config.additionalFees?.utilities?.electric?.unit ?? null,
-                  },
+                electric: {
+                  unit: null,
                 },
               },
-            });
-          } else {
-            // ถ้าไม่มีข้อมูล config ให้บันทึกค่าเริ่มต้น
-            await updateDoc(docRef, { 
-              config: initialConfig 
-            });
-            setConfig(initialConfig);
-          }
+            },
+          });
         }
       } catch (error) {
         console.error("Error fetching dormitory:", error);
@@ -254,7 +226,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">
+            <h1 className="text-2xl font-semibold text-white">
               ตั้งค่าหอพัก
             </h1>
             <p className="mt-1 text-sm text-gray-500">
@@ -276,7 +248,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-gray-900">กำหนดราคา</h2>
+            <h2 className="text-lg font-medium text-white">กำหนดราคา</h2>
             <button
               onClick={handleAddRoomType}
               className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
@@ -301,7 +273,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                   handleRoomTypeChange(type.id, "name", e.target.value)
                 }
                 placeholder="ชื่อราคา"
-                className="flex-1 text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                className="flex-1 text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
               />
               <div className="relative">
                 <input
@@ -313,7 +285,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     handleRoomTypeChange(type.id, "basePrice", e.target.value === '' ? null : Number(e.target.value))
                   }
                   placeholder="ราคา"
-                  className="w-32 text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                  className="w-32 text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                 />
                 <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
               </div>
@@ -342,7 +314,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       {/* ค่าบริการเพิ่มเติม */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">
+          <h2 className="text-lg font-medium text-white">
             ค่าบริการเพิ่มเติม
           </h2>
         </div>
@@ -369,7 +341,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     })
                   }
                   placeholder="ค่าบริการ"
-                  className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                  className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                 />
                 <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
               </div>
@@ -395,7 +367,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     })
                   }
                   placeholder="ค่าบริการ"
-                  className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                  className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                 />
                 <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
               </div>
@@ -429,7 +401,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                       }));
                     }}
                     placeholder="ค่าตามชั้น"
-                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                    className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
                   <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
                 </div>
@@ -457,7 +429,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                       }));
                     }}
                     placeholder="ค่าตามชั้น"
-                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                    className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
                   <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
                 </div>
@@ -470,7 +442,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       {/* ค่าน้ำค่าไฟ */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">
+          <h2 className="text-lg font-medium text-white">
             ค่าน้ำค่าไฟ
           </h2>
         </div>
@@ -479,7 +451,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* ค่าน้ำ */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">ค่าน้ำ</h3>
+              <h3 className="text-sm font-medium text-white">ค่าน้ำ</h3>
               <div className="space-y-2">
                 <label className="block text-sm text-gray-600">
                   ค่าน้ำแบบเหมาจ่าย (ต่อคน)
@@ -505,7 +477,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                       })
                     }
                     placeholder="ค่าน้ำต่อคน"
-                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                    className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
                   <span className="absolute right-3 top-2 text-sm text-gray-500">บาท/คน/เดือน</span>
                 </div>
@@ -514,7 +486,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
 
             {/* ค่าไฟ */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">ค่าไฟ</h3>
+              <h3 className="text-sm font-medium text-white">ค่าไฟ</h3>
               <div className="space-y-2">
                 <label className="block text-sm text-gray-600">
                   ค่าไฟต่อหน่วย
@@ -540,7 +512,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                       })
                     }
                     placeholder="ค่าไฟต่อหน่วย"
-                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                    className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
                   <span className="absolute right-3 top-2 text-sm text-gray-500">บาท/หน่วย</span>
                 </div>

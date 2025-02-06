@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
+  Home,
   Users,
   FileText,
   AlertTriangle,
@@ -17,6 +18,8 @@ import {
   Bell,
   Wrench,
   Zap,
+  MessageSquare,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,67 +30,46 @@ interface NavItem {
   badge?: number;
 }
 
-const mainNavItems: NavItem[] = [
+const navItems: NavItem[] = [
   {
-    title: "แผงควบคุม",
+    title: "แดชบอร์ด",
     href: "/",
     icon: LayoutDashboard,
   },
   {
-    title: "ค้นหาผู้สมัคร",
-    href: "/search",
-    icon: Search,
-  },
-  {
-    title: "จัดการหอพัก",
+    title: "หอพัก",
     href: "/dormitories",
     icon: Building2,
   },
   {
-    title: "จัดการผู้เช่า",
+    title: "ผู้เช่า",
     href: "/tenants",
     icon: Users,
   },
-];
-
-const billingNavItems: NavItem[] = [
   {
-    title: "บิลและการชำระเงิน",
+    title: "บิล",
     href: "/bills",
     icon: Receipt,
   },
   {
+    title: "รายงาน",
+    href: "/reports",
+    icon: FileText,
+  },
+  {
     title: "จดมิเตอร์",
     href: "/meter-reading",
-    icon: Zap,
+    icon: Gauge,
   },
-];
-
-const maintenanceNavItems: NavItem[] = [
   {
     title: "แจ้งซ่อม",
     href: "/maintenance",
     icon: Wrench,
-    badge: 3,
   },
   {
-    title: "การแจ้งเตือน",
-    href: "/notifications",
-    icon: Bell,
-    badge: 2,
-  },
-  {
-    title: "ตรวจจับทุจริต",
-    href: "/fraud-alerts",
+    title: "ตรวจจับการทุจริต",
+    href: "/fraud-detection",
     icon: AlertTriangle,
-  },
-];
-
-const reportNavItems: NavItem[] = [
-  {
-    title: "รายงาน",
-    href: "/reports",
-    icon: FileText,
   },
 ];
 
@@ -100,8 +82,23 @@ const bottomNavItems: NavItem[] = [
 ];
 
 export default function Sidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved ? JSON.parse(saved) : false;
+    }
+    return false;
+  });
+  
   const pathname = usePathname();
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', JSON.stringify(isCollapsed));
+  }, [isCollapsed]);
+
+  const toggleCollapse = () => {
+    setIsCollapsed((prev: boolean) => !prev);
+  };
 
   const NavItem = ({ item }: { item: NavItem }) => {
     const isActive = pathname === item.href;
@@ -113,8 +110,8 @@ export default function Sidebar() {
         className={cn(
           "flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all duration-200 rounded-xl relative group",
           isActive
-            ? "text-white bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-500/25"
-            : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            ? "text-white bg-white/10 shadow-sm"
+            : "text-white hover:text-white hover:bg-white/10"
         )}
         title={isCollapsed ? item.title : undefined}
       >
@@ -144,7 +141,7 @@ export default function Sidebar() {
   const NavSection = ({ items, title }: { items: NavItem[]; title?: string }) => (
     <div className="space-y-1">
       {title && !isCollapsed && (
-        <h3 className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <h3 className="px-3 text-xs font-semibold text-white/70 uppercase tracking-wider">
           {title}
         </h3>
       )}
@@ -155,69 +152,71 @@ export default function Sidebar() {
   );
 
   return (
-    <aside
-      className={cn(
-        "flex flex-col h-screen bg-slate-950/50 backdrop-blur-xl border-r border-slate-800/60 transition-all duration-300 shrink-0",
-        isCollapsed ? "w-[72px]" : "w-64"
-      )}
-    >
-      {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-slate-800/60">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/25">
-            G
-          </div>
-          {!isCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-lg font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                G-JOB
-              </span>
-              <span className="text-xs text-slate-400">ระบบจัดการหอพัก</span>
+    <div className="relative flex">
+      <aside
+        className={cn(
+          "flex flex-col h-screen bg-slate-950/50 backdrop-blur-xl border-r border-slate-800/60 transition-all duration-300 shrink-0 relative",
+          isCollapsed ? "w-[72px]" : "w-64"
+        )}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center px-4 border-b border-slate-800/60">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/25">
+              TB
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Search */}
-      {!isCollapsed && (
-        <div className="p-4">
-          <div className="relative group">
-            <input
-              type="text"
-              placeholder="ค้นหา..."
-              className="w-full bg-slate-900/50 text-white text-sm rounded-xl pl-10 pr-4 py-2.5 border border-slate-800 focus:outline-none focus:border-slate-700 focus:ring-1 focus:ring-slate-700 transition-all duration-200"
-            />
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors duration-200" />
+            {!isCollapsed && (
+              <div className="flex flex-col">
+                <span className="text-lg font-bold text-white">
+                  ธนบูรณ์กรุ๊ป OSS
+                </span>
+                <span className="text-xs font-medium text-white/70">ระบบจัดการหอพัก</span>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Navigation */}
-      <div className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto">
-        <NavSection items={mainNavItems} title="หลัก" />
-        <NavSection items={billingNavItems} title="การเงิน" />
-        <NavSection items={maintenanceNavItems} title="การจัดการ" />
-        <NavSection items={reportNavItems} title="รายงาน" />
-      </div>
+        {/* Search */}
+        {!isCollapsed && (
+          <div className="p-4">
+            <div className="relative group">
+              <input
+                type="text"
+                placeholder="ค้นหา..."
+                className="w-full bg-slate-900/50 text-white text-sm rounded-xl pl-4 pr-10 py-2.5 border border-slate-800 focus:outline-none focus:border-slate-700 focus:ring-1 focus:ring-slate-700 transition-all duration-200"
+              />
+              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-white transition-colors duration-200" />
+            </div>
+          </div>
+        )}
 
-      {/* Bottom Section */}
-      <div className="p-4 border-t border-slate-800/60">
-        <NavSection items={bottomNavItems} />
-        
+        {/* Navigation */}
+        <div className="flex-1 flex flex-col gap-6 p-4 overflow-y-auto">
+          <NavSection items={navItems} title="หลัก" />
+        </div>
+
+        {/* Bottom Section */}
+        <div className="p-4 border-t border-slate-800/60">
+          <NavSection items={bottomNavItems} />
+        </div>
+
+        {/* Toggle Button - Moves with Sidebar */}
         <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-2 text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 rounded-xl transition-all duration-200"
+          onClick={toggleCollapse}
+          className={cn(
+            "absolute -right-4 top-24 z-50 bg-slate-800 text-white p-2 rounded-full shadow-lg hover:bg-slate-700 transition-all duration-300",
+            "hover:scale-110 active:scale-95",
+            isCollapsed ? "translate-x-0" : "translate-x-0"
+          )}
+          title={isCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
         >
           {isCollapsed ? (
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-4 h-4" />
           ) : (
-            <>
-              <ChevronLeft className="w-5 h-5" />
-              <span>ย่อเมนู</span>
-            </>
+            <ChevronLeft className="w-4 h-4" />
           )}
         </button>
-      </div>
-    </aside>
+      </aside>
+    </div>
   );
 } 

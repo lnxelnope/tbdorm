@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Dormitory } from "@/types/dormitory";
 import EditTenantModal from "./EditTenantModal";
 import { toast } from "sonner";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { deleteTenant, deleteMultipleTenants } from "@/lib/firebase/firebaseUtils";
 import Link from "next/link";
 import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Tenant {
   id: string;
@@ -218,189 +219,203 @@ export default function TenantList({
   };
 
   return (
-    <>
+    <div className="space-y-4">
       {selectedTenants.length > 0 && (
-        <div className="mb-4 p-4 bg-white rounded-lg shadow flex items-center justify-between">
-          <span className="text-sm text-gray-600">
-            เลือก {selectedTenants.length} รายการ
-          </span>
-          <button
-            onClick={handleDeleteSelected}
-            disabled={isDeleting}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-          >
-            ลบที่เลือก
-          </button>
-        </div>
+        <Card>
+          <CardContent className="flex items-center justify-between p-4">
+            <span className="text-sm text-muted-foreground">
+              เลือก {selectedTenants.length} รายการ
+            </span>
+            <button
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 h-9 px-4 py-2 disabled:opacity-50"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              ลบที่เลือก
+            </button>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th scope="col" className="px-6 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={selectedTenants.length === filteredTenants.length && filteredTenants.length > 0}
-                  onChange={handleSelectAll}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('name')}
-              >
-                <div className="flex items-center gap-2">
-                  ชื่อ-นามสกุล
-                  <SortIcon field="name" />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('dormitory')}
-              >
-                <div className="flex items-center gap-2">
-                  หอพัก
-                  <SortIcon field="dormitory" />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('roomNumber')}
-              >
-                <div className="flex items-center gap-2">
-                  ห้อง
-                  <SortIcon field="roomNumber" />
-                </div>
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Line ID
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('deposit')}
-              >
-                <div className="flex items-center gap-2">
-                  เงินประกัน
-                  <SortIcon field="deposit" />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('numberOfResidents')}
-              >
-                <div className="flex items-center gap-2">
-                  จำนวนผู้พัก
-                  <SortIcon field="numberOfResidents" />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer"
-                onClick={() => handleSort('rent')}
-              >
-                <div className="flex items-center gap-2">
-                  ค่าเช่า/เดือน
-                  <SortIcon field="rent" />
-                </div>
-              </th>
-              <th scope="col" className="relative px-6 py-3">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
-            {filteredTenants.map((tenant) => {
-              const dormitory = dormitories.find(
-                (d) => d.id === tenant.dormitoryId
-              );
-              return (
-                <tr key={tenant.id} className={selectedTenants.includes(tenant.id) ? 'bg-blue-50' : ''}>
-                  <td className="whitespace-nowrap px-6 py-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>รายชื่อผู้เช่า</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <table className="w-full">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th scope="col" className="p-3">
                     <input
                       type="checkbox"
-                      checked={selectedTenants.includes(tenant.id)}
-                      onChange={() => handleSelectTenant(tenant.id)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      checked={selectedTenants.length === filteredTenants.length && filteredTenants.length > 0}
+                      onChange={handleSelectAll}
+                      className="h-4 w-4 rounded border-input bg-background"
                     />
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <Link 
-                      href={`/tenants/${tenant.id}`}
-                      className="text-blue-600 hover:text-blue-900 hover:underline"
-                    >
-                      {tenant.name}
-                    </Link>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    <Link 
-                      href={`/dormitories/${tenant.dormitoryId}`}
-                      className="text-blue-600 hover:text-blue-900 hover:underline"
-                    >
-                      {dormitories.find((d) => d.id === tenant.dormitoryId)?.name}
-                    </Link>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    <Link 
-                      href={`/dormitories/${tenant.dormitoryId}/rooms?search=${tenant.roomNumber}`}
-                      className="text-blue-600 hover:text-blue-900 hover:underline"
-                    >
-                      {tenant.roomNumber}
-                    </Link>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {tenant.lineId}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {tenant.deposit.toLocaleString("th-TH")} บาท
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {tenant.numberOfResidents} คน
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {calculateRent(tenant, dormitory).toLocaleString("th-TH")} บาท
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTenant(tenant)}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      แก้ไข
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTenant(tenant.id)}
-                      disabled={isDeleting}
-                      className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                    >
-                      ลบ
-                    </button>
-                  </td>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center gap-1">
+                      ชื่อ-นามสกุล
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('dormitory')}
+                  >
+                    <div className="flex items-center gap-1">
+                      หอพัก
+                      <SortIcon field="dormitory" />
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('roomNumber')}
+                  >
+                    <div className="flex items-center gap-1">
+                      ห้อง
+                      <SortIcon field="roomNumber" />
+                    </div>
+                  </th>
+                  <th scope="col" className="p-3 text-left text-sm font-medium text-muted-foreground">
+                    Line ID
+                  </th>
+                  <th
+                    scope="col"
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('deposit')}
+                  >
+                    <div className="flex items-center gap-1">
+                      เงินประกัน
+                      <SortIcon field="deposit" />
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('numberOfResidents')}
+                  >
+                    <div className="flex items-center gap-1">
+                      จำนวนผู้พัก
+                      <SortIcon field="numberOfResidents" />
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('rent')}
+                  >
+                    <div className="flex items-center gap-1">
+                      ค่าเช่า/เดือน
+                      <SortIcon field="rent" />
+                    </div>
+                  </th>
+                  <th scope="col" className="relative p-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredTenants.map((tenant) => {
+                  const dormitory = dormitories.find(
+                    (d) => d.id === tenant.dormitoryId
+                  );
+                  return (
+                    <tr 
+                      key={tenant.id}
+                      className="bg-background hover:bg-muted/50 transition-colors"
+                    >
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedTenants.includes(tenant.id)}
+                          onChange={() => handleSelectTenant(tenant.id)}
+                          className="h-4 w-4 rounded border-input bg-background"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <Link 
+                            href={`/tenants/${tenant.id}`}
+                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
+                          >
+                            {tenant.name}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <Link 
+                            href={`/dormitories/${tenant.dormitoryId}`}
+                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
+                          >
+                            {dormitories.find((d) => d.id === tenant.dormitoryId)?.name}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <Link 
+                            href={`/dormitories/${tenant.dormitoryId}/rooms?search=${tenant.roomNumber}`}
+                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
+                          >
+                            {tenant.roomNumber}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        {tenant.lineId}
+                      </td>
+                      <td className="p-3">
+                        {tenant.deposit.toLocaleString("th-TH")} บาท
+                      </td>
+                      <td className="p-3">
+                        {tenant.numberOfResidents} คน
+                      </td>
+                      <td className="p-3">
+                        {calculateRent(tenant, dormitory).toLocaleString("th-TH")} บาท
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedTenant(tenant)}
+                            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 px-3"
+                          >
+                            แก้ไข
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTenant(tenant.id)}
+                            disabled={isDeleting}
+                            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 h-8 px-3 disabled:opacity-50"
+                          >
+                            ลบ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {selectedTenant && (
         <EditTenantModal
-          isOpen={!!selectedTenant}
-          onClose={() => setSelectedTenant(null)}
           tenant={selectedTenant}
+          onClose={() => setSelectedTenant(null)}
           dormitories={dormitories}
-          onSuccess={() => {
-            // TODO: Refresh tenant list
-            setSelectedTenant(null);
-          }}
         />
       )}
-    </>
+    </div>
   );
 } 

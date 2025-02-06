@@ -9,8 +9,8 @@ import { signOut } from "@firebase/auth";
 import { toast } from "sonner";
 
 export default function Header() {
-  const { user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleLogout = async () => {
     try {

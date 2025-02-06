@@ -122,7 +122,7 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
   return (
     <div className="space-y-6 p-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold text-gray-900">รูปแบบห้องพัก</h1>
+        <h1 className="text-2xl font-semibold text-white">รูปแบบห้องพัก</h1>
         <button
           onClick={() => {
             resetForm();
@@ -161,19 +161,19 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
           <tbody className="bg-white divide-y divide-gray-200">
             {roomTypes.map((type) => (
               <tr key={type.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                   {type.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                   {type.basePrice.toLocaleString()} บาท
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                   {type.airConditionerFee?.toLocaleString() || "-"} บาท
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                   {type.parkingFee?.toLocaleString() || "-"} บาท
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                   {type.isDefault ? "ใช่" : "ไม่"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -198,7 +198,7 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)}>
         <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <h2 className="text-lg font-medium text-white mb-4">
             {editingType ? "แก้ไขรูปแบบห้อง" : "เพิ่มรูปแบบห้อง"}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">

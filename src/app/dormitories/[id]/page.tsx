@@ -6,65 +6,83 @@ import { ArrowLeft, Building2, Edit, Settings, CheckCircle, XCircle, LayoutDashb
 import { toast } from "sonner";
 import { getDormitory, getDormitoryStats } from "@/lib/firebase/firebaseUtils";
 import { Dormitory, DormitoryStats } from "@/types/dormitory";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
+import React from "react";
 
-export default function DormitoryDetailsPage({ params }: { params: { id: string } }) {
+// แยก Loading component
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-2 text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function DormitoryPage() {
+  const router = useRouter();
+  const params = useParams();
+  const dormId = params?.id as string;
+  
   const [isLoading, setIsLoading] = useState(true);
   const [dormitory, setDormitory] = useState<Dormitory | null>(null);
   const [stats, setStats] = useState<DormitoryStats | null>(null);
-  const router = useRouter();
 
   const menuItems = [
     {
       name: "แดชบอร์ด",
-      href: `/dormitories/${params.id}/dashboard`,
       icon: LayoutDashboard,
+      href: `/dormitories/${dormId}/dashboard`,
+      description: "ภาพรวมของหอพัก",
     },
     {
       name: "ห้องพัก",
-      href: `/dormitories/${params.id}/rooms`,
+      href: `/dormitories/${dormId}/rooms`,
       icon: Home,
     },
     {
       name: "รูปแบบห้อง",
-      href: `/dormitories/${params.id}/room-types`,
+      href: `/dormitories/${dormId}/room-types`,
       icon: Boxes,
     },
     {
       name: "ผู้เช่า",
-      href: `/dormitories/${params.id}/tenants`,
+      href: `/dormitories/${dormId}/tenants`,
       icon: Users,
     },
     {
       name: "มิเตอร์",
-      href: `/dormitories/${params.id}/utilities`,
+      href: `/dormitories/${dormId}/utilities`,
       icon: Gauge,
     },
     {
       name: "บิล",
-      href: `/dormitories/${params.id}/bills`,
+      href: `/dormitories/${dormId}/bills`,
       icon: Receipt,
     },
     {
       name: "รายงาน",
-      href: `/dormitories/${params.id}/reports`,
+      href: `/dormitories/${dormId}/reports`,
       icon: FileText,
     },
     {
       name: "ตั้งค่า",
-      href: `/dormitories/${params.id}/settings`,
+      href: `/dormitories/${dormId}/config`,
       icon: Settings,
     },
   ];
 
   useEffect(() => {
-    const fetchData = async () => {
+    if (!dormId) return;
+
+    const fetchDormitory = async () => {
       try {
-        const result = await getDormitory(params.id);
+        const result = await getDormitory(dormId);
         if (result.success && result.data) {
           setDormitory(result.data);
-          // ดึงข้อมูลสถิติห้องพัก
-          const statsResult = await getDormitoryStats(params.id);
+          const statsResult = await getDormitoryStats(dormId);
           if (statsResult.success && statsResult.data) {
             setStats(statsResult.data);
           }
@@ -74,24 +92,22 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
         }
       } catch (error) {
         console.error("Error fetching dormitory:", error);
-        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+        toast.error("ไม่สามารถโหลดข้อมูลหอพักได้");
+        router.push("/dormitories");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, [params.id, router]);
+    fetchDormitory();
+  }, [dormId, router]);
+
+  if (!dormId) {
+    return <LoadingSpinner />;
+  }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   if (!dormitory) {
@@ -124,14 +140,14 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
           </Link>
           <div className="flex items-center gap-2">
             <Link
-              href={`/dormitories/${params.id}/edit`}
+              href={`/dormitories/${dormId}/edit`}
               className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
             >
               <Edit className="w-4 h-4 mr-1" />
               แก้ไข
             </Link>
             <Link
-              href={`/dormitories/${params.id}/config`}
+              href={`/dormitories/${dormId}/config`}
               className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-600 border-2 border-gray-600 rounded-lg hover:bg-gray-50 transition-colors duration-150"
             >
               <Settings className="w-4 h-4 mr-1" />
@@ -139,7 +155,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
             </Link>
           </div>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">{dormitory.name}</h1>
+        <h1 className="text-2xl font-semibold text-white">{dormitory.name}</h1>
         <p className="mt-1 text-sm text-gray-500">{dormitory.address}</p>
       </div>
 
@@ -154,7 +170,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
             <div className="flex items-center">
               <item.icon className="h-8 w-8 text-blue-600" />
               <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-lg font-medium text-white">
                   {item.name}
                 </h3>
               </div>
@@ -165,11 +181,11 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
 
       <div className="bg-white shadow rounded-lg divide-y divide-gray-200">
         <div className="p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">ข้อมูลทั่วไป</h2>
+          <h2 className="text-lg font-medium text-white mb-4">ข้อมูลทั่วไป</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
             <div>
               <dt className="text-sm font-medium text-gray-500">ชื่อหอพัก</dt>
-              <dd className="mt-1 text-sm text-gray-900">{dormitory.name}</dd>
+              <dd className="mt-1 text-sm text-white">{dormitory.name}</dd>
             </div>
             
             <div>
@@ -185,24 +201,24 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
 
             <div>
               <dt className="text-sm font-medium text-gray-500">ที่อยู่</dt>
-              <dd className="mt-1 text-sm text-gray-900">{dormitory.address || "-"}</dd>
+              <dd className="mt-1 text-sm text-white">{dormitory.address || "-"}</dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">เบอร์โทรศัพท์</dt>
-              <dd className="mt-1 text-sm text-gray-900">{dormitory.phone || "-"}</dd>
+              <dd className="mt-1 text-sm text-white">{dormitory.phone || "-"}</dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">จำนวนชั้น</dt>
-              <dd className="mt-1 text-sm text-gray-900">
+              <dd className="mt-1 text-sm text-white">
                 {dormitory.totalFloors === 0 ? "ผสม (มีทั้ง 1 ชั้นและ 2 ชั้น)" : `${dormitory.totalFloors} ชั้น`}
               </dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">พิกัด</dt>
-              <dd className="mt-1 text-sm text-gray-900">
+              <dd className="mt-1 text-sm text-white">
                 {dormitory.location?.latitude && dormitory.location?.longitude ? (
                   <a
                     href={`https://www.google.com/maps?q=${dormitory.location.latitude},${dormitory.location.longitude}`}
@@ -221,11 +237,11 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
         </div>
 
         <div className="p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">สิ่งอำนวยความสะดวก</h2>
+          <h2 className="text-lg font-medium text-white mb-4">สิ่งอำนวยความสะดวก</h2>
           {dormitory.facilities && dormitory.facilities.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">ความปลอดภัย</h3>
+                <h3 className="text-sm font-medium text-white mb-2">ความปลอดภัย</h3>
                 <ul className="space-y-1">
                   {["กล้องวงจรปิด", "ระบบคีย์การ์ด", "รปภ."].map(facility => (
                     <li key={facility} className="flex items-center text-sm">
@@ -241,7 +257,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">อินเทอร์เน็ต</h3>
+                <h3 className="text-sm font-medium text-white mb-2">อินเทอร์เน็ต</h3>
                 <ul className="space-y-1">
                   {["Wi-Fi", "อินเทอร์เน็ตไฟเบอร์"].map(facility => (
                     <li key={facility} className="flex items-center text-sm">
@@ -257,7 +273,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">ที่จอดรถ</h3>
+                <h3 className="text-sm font-medium text-white mb-2">ที่จอดรถ</h3>
                 <ul className="space-y-1">
                   {["ที่จอดรถยนต์", "ที่จอดรถมอเตอร์ไซค์", "ที่จอดรถมีหลังคา"].map(facility => (
                     <li key={facility} className="flex items-center text-sm">
@@ -273,7 +289,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">สิ่งอำนวยความสะดวกทั่วไป</h3>
+                <h3 className="text-sm font-medium text-white mb-2">สิ่งอำนวยความสะดวกทั่วไป</h3>
                 <ul className="space-y-1">
                   {["ลิฟต์", "ร้านซัก-รีด", "เครื่องซักผ้าหยอดเหรียญ"].map(facility => (
                     <li key={facility} className="flex items-center text-sm">
@@ -289,7 +305,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">ร้านค้าและบริการ</h3>
+                <h3 className="text-sm font-medium text-white mb-2">ร้านค้าและบริการ</h3>
                 <ul className="space-y-1">
                   {["ร้านสะดวกซื้อ", "ร้านอาหาร", "ตู้น้ำดื่มหยอดเหรียญ"].map(facility => (
                     <li key={facility} className="flex items-center text-sm">
@@ -310,7 +326,7 @@ export default function DormitoryDetailsPage({ params }: { params: { id: string 
         </div>
 
         <div className="p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">สถิติห้องพัก</h2>
+          <h2 className="text-lg font-medium text-white mb-4">สถิติห้องพัก</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <dt className="text-sm font-medium text-blue-900">จำนวนห้องทั้งหมด</dt>

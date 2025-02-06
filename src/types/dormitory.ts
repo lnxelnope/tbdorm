@@ -116,22 +116,23 @@ export interface DormitoryStats {
 export interface Tenant {
   id: string;
   name: string;
-  idCard: string; // เพิ่มเลขบัตรประชาชน
+  idCard: string;
   phone: string;
-  email: string;
+  email?: string;
   lineId: string;
-  currentAddress?: string; // เพิ่มที่อยู่ปัจจุบัน
+  currentAddress?: string;
   dormitoryId: string;
   roomNumber: string;
   startDate: string;
   deposit: number;
   numberOfResidents: number;
-  outstandingBalance: number; // เพิ่มค่าเช่าคงค้าง
   emergencyContact: {
     name: string;
     relationship: string;
     phone: string;
   };
+  outstandingBalance: number;
+  status: 'active' | 'inactive';
   createdAt: Date;
   updatedAt: Date;
 }

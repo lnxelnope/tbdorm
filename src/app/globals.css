@@ -2,323 +2,137 @@
 @tailwind components;
 @tailwind utilities;
 
+/* เช็คว่ามีการ import ไฟล์นี้ใน layout.tsx */
+
 :root {
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --secondary: #64748b;
-  --success: #22c55e;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --info: #3b82f6;
+  --foreground-rgb: 255, 255, 255;
+  --background-rgb: 10, 15, 28;
+  --primary-blue: 37, 99, 235;
+  --input-yellow: 254, 252, 232;
 }
 
-@layer base {
-  body {
-    @apply antialiased;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+  min-height: 100vh;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 
-  body:not(.dark) {
-    @apply bg-gray-100 text-slate-900;
+  .text-shadow-sm {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   }
 
-  .dark body {
-    @apply bg-[#0A0F1C] text-white;
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
-  h1 {
-    @apply text-2xl font-bold;
-  }
-
-  h2 {
-    @apply text-xl font-semibold;
-  }
-
-  h3 {
-    @apply text-lg font-medium;
-  }
-
-  .dark h1,
-  .dark h2,
-  .dark h3 {
-    @apply text-white;
+  .text-shadow-lg {
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
   }
 }
 
 @layer components {
-  /* Cards */
   .card {
-    @apply bg-white rounded-lg shadow-sm border border-slate-200/60 p-6;
-  }
-
-  .dark .card {
-    @apply bg-gray-800/50 border-white/5 backdrop-blur-xl;
+    @apply relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-xl;
   }
 
   .card-header {
-    @apply flex items-center justify-between mb-4 pb-4 border-b border-slate-200/80;
+    @apply flex items-center justify-between p-6 border-b border-white/10 bg-white/[0.02];
   }
 
-  .dark .card-header {
-    @apply border-white/5;
+  .heading-1 {
+    @apply text-2xl font-semibold text-white text-shadow-sm;
   }
 
-  /* Forms */
-  .form-group {
-    @apply space-y-2 mb-4;
+  .heading-2 {
+    @apply text-xl font-semibold text-white/90 text-shadow-sm;
   }
 
-  .form-label {
-    @apply block text-sm font-medium text-slate-700;
+  .heading-3 {
+    @apply text-lg font-medium text-white/80 text-shadow-sm;
   }
 
-  .dark .form-label {
-    @apply text-white/70;
+  .text-secondary {
+    @apply text-white/80;
   }
 
-  .form-input,
-  .form-select,
-  .form-textarea {
-    @apply w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm
-    focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
-    disabled:bg-slate-50 disabled:text-slate-500 disabled:border-slate-200;
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  textarea,
+  select {
+    @apply w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white 
+    placeholder:text-white/40
+    focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50;
   }
 
-  .dark .form-input,
-  .dark .form-select,
-  .dark .form-textarea {
-    @apply bg-white/5 border-white/10 text-white
-    focus:ring-blue-500/30 focus:border-blue-500/50
-    disabled:bg-white/5 disabled:text-white/30 disabled:border-white/5;
+  button[type="submit"] {
+    @apply w-full flex justify-center py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium
+    rounded-xl shadow-lg shadow-blue-500/25 transition-all duration-200
+    focus:outline-none focus:ring-2 focus:ring-blue-500/50;
   }
 
-  .form-error {
-    @apply text-sm text-red-600 mt-1;
-  }
-
-  .dark .form-error {
-    @apply text-red-400;
-  }
-
-  /* Buttons */
-  .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium
-    focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed
-    transition-colors duration-200;
-  }
-
-  .dark .btn {
-    @apply focus:ring-offset-[#0A0F1C];
+  button[type="button"] {
+    @apply px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-medium border border-white/10
+    rounded-xl transition-all duration-200 shadow-sm
+    focus:outline-none focus:ring-2 focus:ring-white/20;
   }
 
   .btn-primary {
-    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    @apply inline-flex items-center justify-center py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium
+    rounded-xl shadow-lg shadow-blue-500/25 transition-all duration-200
+    focus:outline-none focus:ring-2 focus:ring-blue-500/50;
   }
 
   .btn-secondary {
-    @apply bg-slate-600 text-white hover:bg-slate-700 focus:ring-slate-500;
+    @apply inline-flex items-center justify-center py-2.5 px-4 bg-white/5 hover:bg-white/10 text-white 
+    font-medium border border-white/10 rounded-xl transition-all duration-200 shadow-sm
+    focus:outline-none focus:ring-2 focus:ring-white/20;
   }
 
-  .btn-success {
-    @apply bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+  .banner {
+    @apply bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg;
   }
 
-  .btn-danger {
-    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  .banner-light {
+    @apply bg-blue-50 text-blue-700 border-blue-100;
   }
 
-  .btn-warning {
-    @apply bg-yellow-500 text-white hover:bg-yellow-600 focus:ring-yellow-500;
+  /* เพิ่มสไตล์สำหรับ links */
+  a {
+    @apply text-white/90 hover:text-white transition-colors;
   }
 
-  .btn-outline {
-    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-500;
-  }
-
-  .dark .btn-outline {
-    @apply border-white/10 bg-white/5 text-white hover:bg-white/10 focus:ring-white/30;
-  }
-
-  /* Tables */
-  .table-container {
-    @apply overflow-x-auto rounded-lg border border-slate-200/60 bg-white;
-  }
-
-  .dark .table-container {
-    @apply border-white/5 bg-white/5 backdrop-blur-xl;
-  }
-
-  .table {
-    @apply min-w-full divide-y divide-slate-200/80;
-  }
-
-  .dark .table {
-    @apply divide-white/5;
-  }
-
-  .table th {
-    @apply px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-50/50;
-  }
-
-  .dark .table th {
-    @apply text-white/50 bg-white/5;
-  }
-
-  .table td {
-    @apply px-6 py-4 text-sm text-slate-600 border-b border-slate-200/60;
-  }
-
-  .dark .table td {
-    @apply text-white/70 border-white/5;
-  }
-
-  .table tr:hover {
-    @apply bg-slate-50/50;
-  }
-
-  .dark .table tr:hover {
-    @apply bg-white/5;
-  }
-
-  /* Status Badges */
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-  }
-
-  .badge-success {
-    @apply bg-green-100 text-green-800;
-  }
-
-  .dark .badge-success {
-    @apply bg-green-500/20 text-green-300;
-  }
-
-  .badge-warning {
-    @apply bg-yellow-100 text-yellow-800;
-  }
-
-  .dark .badge-warning {
-    @apply bg-yellow-500/20 text-yellow-300;
-  }
-
-  .badge-danger {
-    @apply bg-red-100 text-red-800;
-  }
-
-  .dark .badge-danger {
-    @apply bg-red-500/20 text-red-300;
-  }
-
-  .badge-info {
-    @apply bg-blue-100 text-blue-800;
-  }
-
-  .dark .badge-info {
-    @apply bg-blue-500/20 text-blue-300;
-  }
-
-  /* Navigation */
-  .nav-link {
-    @apply flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
-    transition-colors duration-200;
-  }
-
-  .nav-link-active {
-    @apply bg-blue-50 text-blue-600;
-  }
-
-  .dark .nav-link-active {
-    @apply bg-blue-500/20 text-blue-300;
-  }
-
-  .nav-link-default {
-    @apply text-slate-600 hover:bg-slate-50 hover:text-slate-900;
-  }
-
-  .dark .nav-link-default {
-    @apply text-white/70 hover:bg-white/5 hover:text-white;
-  }
-
-  /* Loading States */
-  .loading-spinner {
-    @apply animate-spin rounded-full border-2;
-  }
-
-  .dark .loading-spinner {
-    @apply border-white/10 border-t-blue-500;
-  }
-
-  /* Modals */
-  .modal-overlay {
-    @apply fixed inset-0 bg-black/25 backdrop-blur-sm;
-  }
-
-  .dark .modal-overlay {
-    @apply bg-black/50;
-  }
-
-  .modal-container {
-    @apply fixed inset-0 flex items-center justify-center p-4;
-  }
-
-  .modal-content {
-    @apply bg-white rounded-xl shadow-xl w-full max-w-md p-6;
-  }
-
-  .dark .modal-content {
-    @apply bg-gray-800/90 backdrop-blur-xl border border-white/5;
-  }
-
-  /* Alerts */
-  .alert {
-    @apply p-4 rounded-lg mb-4;
-  }
-
-  .alert-success {
-    @apply bg-green-50 text-green-800 border border-green-200;
-  }
-
-  .dark .alert-success {
-    @apply bg-green-500/10 text-green-300 border-green-500/20;
-  }
-
-  .alert-warning {
-    @apply bg-yellow-50 text-yellow-800 border border-yellow-200;
-  }
-
-  .dark .alert-warning {
-    @apply bg-yellow-500/10 text-yellow-300 border-yellow-500/20;
-  }
-
-  .alert-danger {
-    @apply bg-red-50 text-red-800 border border-red-200;
-  }
-
-  .dark .alert-danger {
-    @apply bg-red-500/10 text-red-300 border-red-500/20;
-  }
-
-  .alert-info {
-    @apply bg-blue-50 text-blue-800 border border-blue-200;
-  }
-
-  .dark .alert-info {
-    @apply bg-blue-500/10 text-blue-300 border-blue-500/20;
+  a.link-primary {
+    @apply text-white hover:text-blue-300;
   }
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  @apply w-2;
+/* Dialog Styles */
+.fixed {
+  position: fixed;
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
+[data-headlessui-portal] {
+  position: relative;
+  z-index: 50;
 }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full hover:bg-slate-400;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  @apply bg-white/10 hover:bg-white/20;
+.headlessui-portal-root {
+  position: relative;
+  z-index: 50;
 }

@@ -11,7 +11,7 @@ export default function ReportsPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-semibold text-white">
             รายงานและสถิติ
           </h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -26,28 +26,28 @@ export default function ReportsPage() {
 
       <div className="grid grid-cols-1 gap-6">
         <div className="bg-white rounded-lg border p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <h2 className="text-lg font-medium text-white mb-4">
             อัตราการเข้าพัก
           </h2>
           <OccupancyChart />
         </div>
 
         <div className="bg-white rounded-lg border p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <h2 className="text-lg font-medium text-white mb-4">
             รายรับ-รายจ่าย
           </h2>
           <RevenueChart />
         </div>
 
         <div className="bg-white rounded-lg border p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <h2 className="text-lg font-medium text-white mb-4">
             การซ่อมบำรุง
           </h2>
           <MaintenanceChart />
         </div>
 
         <div className="bg-white rounded-lg border p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <h2 className="text-lg font-medium text-white mb-4">
             การใช้สาธารณูปโภค
           </h2>
           <UtilityUsageChart />

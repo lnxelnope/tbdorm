@@ -6,6 +6,8 @@ import Link from "next/link";
 import { RoomType } from "@/types/dormitory";
 import { getRoomTypes, addRoomType, updateRoomType, deleteRoomType } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
+import React from "react";
+import { useRouter } from "next/navigation";
 
 interface FormData extends Omit<RoomType, 'id'> {
   name: string;
@@ -17,6 +19,8 @@ interface FormData extends Omit<RoomType, 'id'> {
 }
 
 export default function SettingsPage({ params }: { params: { id: string } }) {
+  const dormId = React.use(Promise.resolve(params.id));
+  const router = useRouter();
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -31,22 +35,22 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
   });
 
   useEffect(() => {
-    loadRoomTypes();
-  }, [params.id]);
-
-  const loadRoomTypes = async () => {
-    try {
-      const result = await getRoomTypes(params.id);
-      if (result.success && result.data) {
-        setRoomTypes(result.data);
+    const fetchRoomTypes = async () => {
+      try {
+        const result = await getRoomTypes(dormId);
+        if (result.success && result.data) {
+          setRoomTypes(result.data);
+        }
+      } catch (error) {
+        console.error("Error fetching room types:", error);
+        toast.error("ไม่สามารถโหลดข้อมูลรูปแบบห้องได้");
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Error loading room types:", error);
-      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
+
+    fetchRoomTypes();
+  }, [dormId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,14 +63,14 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
     try {
       if (editingType) {
         // อัพเดทรูปแบบห้อง
-        const result = await updateRoomType(params.id, editingType.id, formData);
+        const result = await updateRoomType(dormId, editingType.id, formData);
         if (result.success) {
           toast.success("แก้ไขรูปแบบห้องเรียบร้อย");
           setEditingType(null);
         }
       } else {
         // เพิ่มรูปแบบห้องใหม่
-        const result = await addRoomType(params.id, formData);
+        const result = await addRoomType(dormId, formData);
         if (result.success) {
           toast.success("เพิ่มรูปแบบห้องเรียบร้อย");
           setShowAddModal(false);
@@ -74,7 +78,19 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
       }
       
       // โหลดข้อมูลใหม่
-      loadRoomTypes();
+      const fetchRoomTypes = async () => {
+        try {
+          const result = await getRoomTypes(dormId);
+          if (result.success && result.data) {
+            setRoomTypes(result.data);
+          }
+        } catch (error) {
+          console.error("Error fetching room types:", error);
+          toast.error("ไม่สามารถโหลดข้อมูลรูปแบบห้องได้");
+        }
+      };
+
+      fetchRoomTypes();
       
       // รีเซ็ตฟอร์ม
       setFormData({
@@ -97,10 +113,22 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
     }
 
     try {
-      const result = await deleteRoomType(params.id, typeId);
+      const result = await deleteRoomType(dormId, typeId);
       if (result.success) {
         toast.success("ลบรูปแบบห้องเรียบร้อย");
-        loadRoomTypes();
+        const fetchRoomTypes = async () => {
+          try {
+            const result = await getRoomTypes(dormId);
+            if (result.success && result.data) {
+              setRoomTypes(result.data);
+            }
+          } catch (error) {
+            console.error("Error fetching room types:", error);
+            toast.error("ไม่สามารถโหลดข้อมูลรูปแบบห้องได้");
+          }
+        };
+
+        fetchRoomTypes();
       }
     } catch (error) {
       console.error("Error deleting room type:", error);

@@ -1,8 +1,9 @@
 "use client";
 
+import React from "react";
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Search, Filter, ArrowLeft, Trash2 } from "lucide-react";
-import { Room, RoomType } from "@/types/dormitory";
+import { Room, RoomType, Tenant } from "@/types/dormitory";
 import Link from "next/link";
 import { getRooms, getRoomTypes, getDormitory, queryTenants } from "@/lib/firebase/firebaseUtils";
 import AddRoomModal from "./AddRoomModal";
@@ -45,7 +46,7 @@ interface Filters {
   hasParking: boolean;
 }
 
-export default function RoomsPage({ params }: { params: { id: string } }) {
+function RoomsPageContent({ dormId }: { dormId: string }) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,7 +80,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
-  const [tenants, setTenants] = useState<any[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
 
   const router = useRouter();
 
@@ -154,13 +155,18 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
 
   // โหลดข้อมูลห้องพักและรูปแบบห้องพัก
   useEffect(() => {
-    const loadData = async () => {
+    const fetchData = async () => {
       try {
-        const [roomsResult, roomTypesResult, dormitoryResult, tenantsResult] = await Promise.all([
-          getRooms(params.id),
-          getRoomTypes(params.id),
-          getDormitory(params.id),
-          queryTenants(params.id)
+        const [
+          roomsResult,
+          roomTypesResult,
+          dormitoryResult,
+          tenantsResult
+        ] = await Promise.all([
+          getRooms(dormId),
+          getRoomTypes(dormId),
+          getDormitory(dormId),
+          queryTenants(dormId)
         ]);
 
         if (roomsResult.success && roomsResult.data) {
@@ -194,15 +200,15 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
           setTenants(tenantsResult.data);
         }
       } catch (error) {
-        console.error("Error loading data:", error);
-        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+        console.error("Error fetching data:", error);
+        toast.error("ไม่สามารถโหลดข้อมูลได้");
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadData();
-  }, [params.id]);
+    fetchData();
+  }, [dormId]);
 
   // อัพเดท searchTerm เมื่อ URL parameter เปลี่ยน
   useEffect(() => {
@@ -228,7 +234,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
     }
 
     try {
-      const result = await deleteRoom(params.id, roomId);
+      const result = await deleteRoom(dormId, roomId);
       if (result.success) {
         setRooms((prev) => prev.filter((room) => room.id !== roomId));
         toast.success("ลบห้องพักเรียบร้อยแล้ว");
@@ -237,7 +243,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
       }
     } catch (error) {
       console.error("Error deleting room:", error);
-      toast.error("เกิดข้อผิดพลาดในการลบห้องพัก");
+      toast.error("ไม่สามารถลบห้องพักได้");
     }
   };
 
@@ -290,7 +296,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
 
     try {
       const results = await Promise.all(
-        selectedRooms.map(roomId => deleteRoom(params.id, roomId))
+        selectedRooms.map(roomId => deleteRoom(dormId, roomId))
       );
 
       const failedCount = results.filter(result => !result.success).length;
@@ -332,12 +338,12 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
             </Link>
           </div>
           <div className="bg-white rounded-lg p-8 text-center max-w-lg mx-auto">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีรูปแบบห้องพัก</h3>
+            <h3 className="text-lg font-medium text-white mb-2">ยังไม่มีรูปแบบห้องพัก</h3>
             <p className="text-sm text-gray-500 mb-6">
               คุณจำเป็นต้องเพิ่มรูปแบบห้องพักอย่างน้อย 1 รูปแบบก่อนที่จะสามารถเพิ่มห้องพักได้
             </p>
             <Link
-              href={`/dormitories/${params.id}/config`}
+              href={`/dormitories/${dormId}/config`}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               ไปที่หน้าตั้งค่าหอพัก
@@ -359,7 +365,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
             <ArrowLeft className="w-6 h-6" />
           </Link>
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">จัดการห้องพัก</h1>
+            <h1 className="text-2xl font-semibold text-white">จัดการห้องพัก</h1>
             {dormitoryName && (
               <p className="text-sm text-gray-500">{dormitoryName}</p>
             )}
@@ -580,26 +586,26 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Link 
-                        href={`/dormitories/${params.id}/rooms/${room.number}`}
+                        href={`/dormitories/${dormId}/rooms/${room.number}`}
                         className="text-sm font-medium text-blue-600 hover:text-blue-900"
                       >
                         ห้อง {room.number}
                       </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">ชั้น {room.floor}</div>
+                      <div className="text-sm text-white">ชั้น {room.floor}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{roomType?.name}</div>
+                      <div className="text-sm text-white">{roomType?.name}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-sm font-medium text-white">
                         ฿{calculateTotalPrice(room, roomTypes, dormitoryConfig).toLocaleString()}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm space-y-1">
-                        <div className="text-gray-900">
+                        <div className="text-white">
                           <span className="font-medium">ค่าห้อง:</span> ฿{roomType?.basePrice.toLocaleString()}
                         </div>
                         {dormitoryConfig.additionalFees.floorRates[room.floor.toString()] && (
@@ -684,7 +690,7 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
         <AddRoomModal
           isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
-          dormitoryId={params.id}
+          dormitoryId={dormId}
           roomTypes={roomTypes}
           onSuccess={handleAddRoom}
         />
@@ -696,9 +702,14 @@ export default function RoomsPage({ params }: { params: { id: string } }) {
           roomTypes={roomTypes}
           onClose={() => setSelectedRoom(null)}
           onSuccess={handleEditRoom}
-          dormitoryId={params.id}
+          dormitoryId={dormId}
         />
       )}
     </div>
   );
+}
+
+export default function RoomsPage({ params }: { params: { id: string } }) {
+  const dormId = React.use(Promise.resolve(params.id));
+  return <RoomsPageContent dormId={dormId} />;
 } 
