@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Dormitory } from "@/types/dormitory";
+import { Dormitory, Tenant } from "@/types/dormitory";
 import EditTenantModal from "./EditTenantModal";
 import { toast } from "sonner";
 import { ChevronUp, ChevronDown, Loader2 } from "lucide-react";
@@ -9,26 +9,6 @@ import { deleteTenant, deleteMultipleTenants } from "@/lib/firebase/firebaseUtil
 import Link from "next/link";
 import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-interface Tenant {
-  id: string;
-  name: string;
-  idCard: string;
-  phone: string;
-  email: string;
-  lineId: string;
-  currentAddress: string;
-  dormitoryId: string;
-  roomNumber: string;
-  startDate: string;
-  deposit: number;
-  numberOfResidents: number;
-  emergencyContact: {
-    name: string;
-    relationship: string;
-    phone: string;
-  };
-}
 
 interface TenantListProps {
   dormitories: Dormitory[];
@@ -182,7 +162,7 @@ export default function TenantList({
       searchQuery === "" ||
       tenant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tenant.phone.includes(searchQuery) ||
-      tenant.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tenant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tenant.roomNumber.includes(searchQuery);
 
     return matchesDormitory && matchesSearch;
@@ -384,6 +364,12 @@ export default function TenantList({
                         {calculateRent(tenant, dormitory).toLocaleString("th-TH")} บาท
                       </td>
                       <td className="p-3">
+                        <div className="flex flex-col">
+                          <span>{tenant.email || "-"}</span>
+                          <span className="text-sm text-gray-500">{tenant.phone}</span>
+                        </div>
+                      </td>
+                      <td className="p-3">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setSelectedTenant(tenant)}
@@ -411,8 +397,13 @@ export default function TenantList({
 
       {selectedTenant && (
         <EditTenantModal
+          isOpen={!!selectedTenant}
           tenant={selectedTenant}
           onClose={() => setSelectedTenant(null)}
+          onSuccess={() => {
+            setSelectedTenant(null);
+            // TODO: Refresh tenant list from parent component
+          }}
           dormitories={dormitories}
         />
       )}

@@ -119,7 +119,7 @@ export interface Tenant {
   idCard: string;
   phone: string;
   email?: string;
-  lineId: string;
+  lineId?: string;
   currentAddress?: string;
   dormitoryId: string;
   roomNumber: string;
@@ -131,10 +131,10 @@ export interface Tenant {
     relationship: string;
     phone: string;
   };
-  outstandingBalance: number;
   status: 'active' | 'inactive';
-  createdAt: Date;
-  updatedAt: Date;
+  outstandingBalance?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface UtilityReading {

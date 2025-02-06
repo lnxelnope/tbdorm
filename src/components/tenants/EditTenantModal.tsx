@@ -3,32 +3,14 @@
 import { useState, useEffect } from "react";
 import { Dialog } from "@headlessui/react";
 import { X } from "lucide-react";
-import { Dormitory } from "@/types/dormitory";
+import { Dormitory, Tenant } from "@/types/dormitory";
 import { toast } from "sonner";
 import { updateTenant } from "@/lib/firebase/firebaseUtils";
 
 interface EditTenantModalProps {
   isOpen: boolean;
   onClose: () => void;
-  tenant: {
-    id: string;
-    name: string;
-    idCard: string;
-    phone: string;
-    email: string;
-    lineId: string;
-    currentAddress: string;
-    dormitoryId: string;
-    roomNumber: string;
-    startDate: string;
-    deposit: number;
-    numberOfResidents: number;
-    emergencyContact: {
-      name: string;
-      relationship: string;
-      phone: string;
-    };
-  };
+  tenant: Tenant;
   dormitories: Dormitory[];
   onSuccess: () => void;
 }
