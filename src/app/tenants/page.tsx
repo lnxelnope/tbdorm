@@ -8,10 +8,14 @@ import type { Dormitory, Tenant } from "@/types/dormitory";
 import TenantList from "@/components/tenants/TenantList";
 import AddTenantModal from "@/components/tenants/AddTenantModal";
 
+interface LocalTenant extends Omit<Tenant, 'currentAddress'> {
+  currentAddress: string;
+}
+
 export default function TenantsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenants, setTenants] = useState<LocalTenant[]>([]);
   const [selectedDormitory, setSelectedDormitory] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -31,7 +35,7 @@ export default function TenantsPage() {
         }
 
         if (tenantsResult.success && tenantsResult.data) {
-          setTenants(tenantsResult.data as Tenant[]);
+          setTenants(tenantsResult.data as LocalTenant[]);
         } else {
           toast.error("ไม่สามารถโหลดข้อมูลผู้เช่าได้");
         }
@@ -48,15 +52,20 @@ export default function TenantsPage() {
 
   const refreshTenants = async () => {
     try {
-      const result = await queryTenants(selectedDormitory || undefined);
+      setIsLoading(true);
+      const result = await queryTenants(selectedDormitory);
       if (result.success && result.data) {
-        setTenants(result.data as Tenant[]);
-      } else {
-        toast.error("ไม่สามารถโหลดข้อมูลผู้เช่าได้");
+        const tenantsWithAddress = result.data.map(tenant => ({
+          ...tenant,
+          currentAddress: tenant.currentAddress || ""
+        })) as LocalTenant[];
+        setTenants(tenantsWithAddress);
       }
     } catch (error) {
-      console.error("Error refreshing tenants:", error);
+      console.error("Error loading tenants:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้เช่า");
+    } finally {
+      setIsLoading(false);
     }
   };
 

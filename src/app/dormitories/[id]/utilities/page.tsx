@@ -81,6 +81,7 @@ export default function UtilitiesPage({ params }: { params: { id: string } }) {
         readingDate: latestReading ? new Date(latestReading.readingDate) : new Date(),
         units: 0,
         createdBy: "admin",
+        isBilled: false,
       };
 
       const result = await addUtilityReading(params.id, readingData);
@@ -122,6 +123,7 @@ export default function UtilitiesPage({ params }: { params: { id: string } }) {
         readingDate: new Date(),
         units: 0,
         createdBy: "admin",
+        isBilled: false,
       };
 
       const result = await addUtilityReading(params.id, readingData);

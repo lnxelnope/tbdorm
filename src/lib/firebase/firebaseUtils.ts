@@ -865,6 +865,30 @@ export const updateBill = async (dormitoryId: string, billId: string, data: Part
   }
 };
 
+export const updateBillStatus = async (
+  dormitoryId: string,
+  billId: string,
+  data: {
+    status: 'pending' | 'partially_paid' | 'paid';
+    paidAmount: number;
+    remainingAmount: number;
+  }
+) => {
+  try {
+    const docRef = doc(db, `dormitories/${dormitoryId}/bills`, billId);
+    await updateDoc(docRef, {
+      status: data.status,
+      paidAmount: data.paidAmount,
+      remainingAmount: data.remainingAmount,
+      updatedAt: serverTimestamp(),
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating bill status:', error);
+    return { success: false, error };
+  }
+};
+
 // Payment Functions
 export const addPayment = async (dormitoryId: string, data: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'>) => {
   try {

@@ -97,8 +97,8 @@ export default function EditTenantModal({
         onSuccess();
         onClose();
       } else {
-        console.error('Error from updateTenant:', result.error);
-        toast.error(result.error || "เกิดข้อผิดพลาดในการแก้ไขข้อมูลผู้เช่า");
+        const errorMessage = typeof result.error === 'string' ? result.error : "เกิดข้อผิดพลาดในการแก้ไขข้อมูลผู้เช่า";
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error in handleSubmit:", error);

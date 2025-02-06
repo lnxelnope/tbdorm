@@ -7,16 +7,27 @@ import { RoomType } from "@/types/dormitory";
 import { getRoomTypes, addRoomType, updateRoomType, deleteRoomType } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 
+interface FormData extends Omit<RoomType, 'id'> {
+  name: string;
+  basePrice: number;
+  isDefault: boolean;
+  description: string;
+  airConditionerFee: number;
+  parkingFee: number;
+}
+
 export default function SettingsPage({ params }: { params: { id: string } }) {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingType, setEditingType] = useState<RoomType | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     name: "",
     basePrice: 0,
     isDefault: false,
     description: "",
+    airConditionerFee: 0,
+    parkingFee: 0,
   });
 
   useEffect(() => {
@@ -71,6 +82,8 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
         basePrice: 0,
         isDefault: false,
         description: "",
+        airConditionerFee: 0,
+        parkingFee: 0,
       });
     } catch (error) {
       console.error("Error saving room type:", error);
@@ -93,6 +106,19 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
       console.error("Error deleting room type:", error);
       toast.error("เกิดข้อผิดพลาดในการลบข้อมูล");
     }
+  };
+
+  const handleEdit = (type: RoomType) => {
+    setEditingType(type);
+    setFormData({
+      name: type.name,
+      basePrice: type.basePrice,
+      isDefault: type.isDefault || false,
+      description: type.description || "",
+      airConditionerFee: type.airConditionerFee || 0,
+      parkingFee: type.parkingFee || 0,
+    });
+    setShowAddModal(true);
   };
 
   if (isLoading) {
@@ -151,15 +177,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                 </div>
                 <div className="flex space-x-2">
                   <button
-                    onClick={() => {
-                      setEditingType(type);
-                      setFormData({
-                        name: type.name,
-                        basePrice: type.basePrice,
-                        isDefault: type.isDefault,
-                        description: type.description || "",
-                      });
-                    }}
+                    onClick={() => handleEdit(type)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-500"
                   >
                     แก้ไข
@@ -259,6 +277,8 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                         basePrice: 0,
                         isDefault: false,
                         description: "",
+                        airConditionerFee: 0,
+                        parkingFee: 0,
                       });
                     }}
                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

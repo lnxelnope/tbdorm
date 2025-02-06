@@ -20,7 +20,7 @@ export default function PaymentModal({
   dormitoryId,
   onPaymentComplete
 }: PaymentModalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<Bill['paymentMethod']>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'promptpay'>('cash');
   const [amount, setAmount] = useState(bill.totalAmount - (bill.paidAmount || 0));
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -42,7 +42,7 @@ export default function PaymentModal({
       }
     };
 
-    if (isOpen && paymentMethod === 'bank_transfer') {
+    if (isOpen && paymentMethod === 'transfer') {
       loadBankAccounts();
     }
   }, [isOpen, dormitoryId, paymentMethod]);
@@ -53,18 +53,22 @@ export default function PaymentModal({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    if (!amount) {
+      toast.error("กรุณากรอกจำนวนเงิน");
+      return;
+    }
 
     try {
+      setIsLoading(true);
       const paymentDetails: Parameters<typeof updateBillStatus>[2] = {
         paymentMethod,
         paidAmount: amount,
         paymentProof: paymentProof ? URL.createObjectURL(paymentProof) : undefined,
       };
 
-      if (paymentMethod === 'bank_transfer' && selectedBank) {
+      if (paymentMethod === 'transfer' && selectedBank) {
         paymentDetails.bankTransferInfo = {
           bankName: selectedBank.bankName,
           accountNumber: selectedBank.accountNumber,
@@ -121,7 +125,7 @@ export default function PaymentModal({
                   <select
                     value={paymentMethod || 'cash'}
                     onChange={(e) => {
-                      setPaymentMethod(e.target.value as Bill['paymentMethod']);
+                      setPaymentMethod(e.target.value as 'cash' | 'transfer' | 'promptpay');
                       setSelectedBank(null);
                       setTransferDate('');
                       setReference('');
@@ -129,12 +133,12 @@ export default function PaymentModal({
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="cash">เงินสด</option>
-                    <option value="bank_transfer">โอนเงินผ่านบัญชีธนาคาร</option>
+                    <option value="transfer">โอนเงินผ่านบัญชีธนาคาร</option>
                     <option value="promptpay">พร้อมเพย์</option>
                   </select>
                 </div>
 
-                {paymentMethod === 'bank_transfer' && (
+                {paymentMethod === 'transfer' && (
                   <>
                     <div>
                       <label className="block text-sm font-medium mb-1">เลือกบัญชีธนาคาร</label>
@@ -194,7 +198,7 @@ export default function PaymentModal({
                   />
                 </div>
 
-                {(paymentMethod === 'bank_transfer' || paymentMethod === 'promptpay') && (
+                {(paymentMethod === 'transfer' || paymentMethod === 'promptpay') && (
                   <div>
                     <label className="block text-sm font-medium mb-1">หลักฐานการโอนเงิน</label>
                     <input

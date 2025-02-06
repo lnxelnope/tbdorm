@@ -68,6 +68,18 @@ export default function AddRoomModal({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [roomTypes, setRoomTypes] = useState<RoomType[]>(initialRoomTypes);
   
+  // ย้าย useState ของ formData มาไว้ด้านบน
+  const defaultRoomType = Array.isArray(roomTypes) ? (roomTypes.find(type => type.isDefault) || roomTypes[0]) : null;
+  const [formData, setFormData] = useState<FormData>({
+    numbers: "",
+    floor: 1,
+    roomType: defaultRoomType?.id || "",
+    hasAirConditioner: false,
+    hasParking: false,
+    status: "available",
+    initialMeterReading: "0",
+  });
+  
   // ถ้าไม่มีรูปแบบห้องให้แจ้งเตือน
   useEffect(() => {
     if (!Array.isArray(roomTypes) || roomTypes.length === 0) {
@@ -77,21 +89,19 @@ export default function AddRoomModal({
     }
   }, [roomTypes, onClose]);
   
-  // หาประเภทห้องที่เป็น default
-  const defaultRoomType = Array.isArray(roomTypes) ? (roomTypes.find(type => type.isDefault) || roomTypes[0]) : null;
+  // อัพเดท roomType เมื่อ defaultRoomType เปลี่ยน
+  useEffect(() => {
+    if (defaultRoomType) {
+      setFormData(prev => ({
+        ...prev,
+        roomType: defaultRoomType.id
+      }));
+    }
+  }, [defaultRoomType]);
+  
   if (!defaultRoomType) {
     return null;
   }
-  
-  const [formData, setFormData] = useState<FormData>({
-    numbers: "",
-    floor: 1,
-    roomType: defaultRoomType.id,
-    hasAirConditioner: false,
-    hasParking: false,
-    status: "available",
-    initialMeterReading: "0",
-  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

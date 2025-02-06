@@ -30,57 +30,54 @@ export default function FraudDetectionPage() {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [roomsResult, readingsResult] = await Promise.all([
-        getRooms("your-dormitory-id"), // TODO: ใส่ dormitory ID จริง
-        getUtilityReadings("your-dormitory-id") // TODO: ใส่ dormitory ID จริง
-      ]);
-
-      if (roomsResult.success && roomsResult.data) {
-        setRooms(roomsResult.data);
+      const roomsResult = await getRooms("your-dormitory-id"); // TODO: ใส่ dormitory ID จริง
+      
+      if (!roomsResult.success || !roomsResult.data) {
+        toast.error("ไม่สามารถโหลดข้อมูลห้องพักได้");
+        return;
       }
 
-      if (readingsResult.success && readingsResult.data) {
-        const electricReadings = readingsResult.data.filter(r => r.type === 'electric');
-        setReadings(electricReadings);
-        
-        // คำนวณการแจ้งเตือน
-        const newAlerts = [];
-        for (const room of roomsResult.data) {
-          const roomReadings = electricReadings.filter(r => r.roomId === room.id);
-          if (roomReadings.length === 0) continue;
+      // ดึงข้อมูลการจดมิเตอร์
+      const readingsResult = await getUtilityReadings("your-dormitory-id"); // TODO: ใส่ dormitory ID จริง
+      if (!readingsResult.success || !readingsResult.data) {
+        toast.error("ไม่สามารถโหลดข้อมูลการจดมิเตอร์ได้");
+        return;
+      }
 
-          // เรียงตามวันที่ล่าสุด
-          roomReadings.sort((a, b) => {
-            const dateA = new Date(a.readingDate);
-            const dateB = new Date(b.readingDate);
-            return dateB.getTime() - dateA.getTime();
+      // กรองเฉพาะมิเตอร์ไฟฟ้า
+      const electricReadings = readingsResult.data.filter(r => r.type === 'electric');
+
+      // คำนวณการแจ้งเตือน
+      const newAlerts: { roomId: string; type: "vacant" | "high"; units: number; date: Date; }[] = [];
+      for (const room of roomsResult.data) {
+        const roomReadings = electricReadings.filter(r => r.roomId === room.id);
+        if (roomReadings.length === 0) continue;
+
+        const latestReading = roomReadings[roomReadings.length - 1];
+        const units = latestReading.units;
+
+        // ตรวจสอบการใช้ไฟฟ้าสูงผิดปกติ
+        if (units > 500) { // TODO: ใส่ค่า threshold ที่เหมาะสม
+          newAlerts.push({
+            roomId: room.id,
+            type: "high",
+            units: units,
+            date: new Date(latestReading.readingDate)
           });
-
-          const latestReading = roomReadings[0];
-          const units = latestReading.units;
-
-          // ตรวจสอบห้องว่าง
-          if (room.status === 'available' && units > settings.vacantRoomThreshold) {
-            newAlerts.push({
-              roomId: room.id,
-              type: 'vacant',
-              units,
-              date: new Date(latestReading.readingDate)
-            });
-          }
-
-          // ตรวจสอบการใช้ไฟสูง
-          if (units > settings.highUsageThreshold) {
-            newAlerts.push({
-              roomId: room.id,
-              type: 'high',
-              units,
-              date: new Date(latestReading.readingDate)
-            });
-          }
         }
-        setAlerts(newAlerts);
+
+        // ตรวจสอบห้องว่างที่มีการใช้ไฟฟ้า
+        if (room.status === 'available' && units > 50) { // TODO: ใส่ค่า threshold ที่เหมาะสม
+          newAlerts.push({
+            roomId: room.id,
+            type: "vacant",
+            units: units,
+            date: new Date(latestReading.readingDate)
+          });
+        }
       }
+
+      setAlerts(newAlerts);
     } catch (error) {
       console.error("Error loading data:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");

@@ -18,12 +18,15 @@ export default function DormitoryList() {
   const loadDormitories = async () => {
     try {
       const result = await queryDormitories();
-      if (result.success) {
+      if (result.success && result.data) {
         setDormitories(result.data);
+      } else {
+        setDormitories([]);
       }
     } catch (error) {
       console.error("Error loading dormitories:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลหอพัก");
+      setDormitories([]);
     } finally {
       setIsLoading(false);
     }

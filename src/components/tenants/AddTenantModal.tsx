@@ -31,6 +31,7 @@ interface TenantFormData {
     relationship: string;
     phone: string;
   };
+  outstandingBalance: number;
 }
 
 export default function AddTenantModal({
@@ -56,32 +57,31 @@ export default function AddTenantModal({
       relationship: "",
       phone: "",
     },
+    outstandingBalance: 0,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    if (!formData.name || !formData.roomNumber) {
+      toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+      return;
+    }
 
     try {
       console.log('Submitting form data:', formData);
-      const result = await addTenant(formData);
-      console.log('Add tenant result:', result);
-      
-      if (result.success) {
-        toast.success("เพิ่มผู้เช่าเรียบร้อยแล้ว");
-        onSuccess();
-        onClose();
-      } else {
-        console.error('Error from addTenant:', result.error);
-        toast.error(result.error || "เกิดข้อผิดพลาดในการเพิ่มผู้เช่า");
-      }
+      const tenantData = {
+        ...formData,
+        outstandingBalance: 0,
+      };
+      await addTenant(tenantData);
+      toast.success("เพิ่มผู้เช่าเรียบร้อย");
+      onSuccess();
+      onClose();
     } catch (error) {
-      console.error("Error in handleSubmit:", error);
+      console.error("Error adding tenant:", error);
       toast.error("เกิดข้อผิดพลาดในการเพิ่มผู้เช่า");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 

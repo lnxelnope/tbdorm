@@ -17,6 +17,7 @@ interface DeepgramContextType {
   connectionState: SOCKET_STATES;
   realtimeTranscript: string;
   error: string | null;
+  deepgramApiKey: string | null;
 }
 
 const DeepgramContext = createContext<DeepgramContextType | undefined>(undefined);
@@ -37,6 +38,7 @@ const DeepgramContextProvider: FunctionComponent<DeepgramContextProviderProps> =
   const [realtimeTranscript, setRealtimeTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<MediaRecorder | null>(null);
+  const deepgramApiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY || null;
 
   const connectToDeepgram = async () => {
     try {
@@ -109,6 +111,7 @@ const DeepgramContextProvider: FunctionComponent<DeepgramContextProviderProps> =
         connectionState,
         realtimeTranscript,
         error,
+        deepgramApiKey,
       }}
     >
       {children}

@@ -32,7 +32,8 @@ export default function MaintenancePage() {
       
       const result = await getMaintenanceRequests('your-dormitory-id', filters);
       if (result.success && result.data) {
-        setRequests(result.data);
+        const maintenanceData = Array.isArray(result.data) ? result.data : [result.data];
+        setRequests(maintenanceData);
       }
 
       // โหลดสถิติ
@@ -41,7 +42,7 @@ export default function MaintenancePage() {
         setStats(statsResult.data);
       }
     } catch (error) {
-      console.error('Error loading maintenance data:', error);
+      console.error('Error loading data:', error);
       toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
     } finally {
       setIsLoading(false);
