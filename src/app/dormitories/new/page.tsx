@@ -29,7 +29,7 @@ interface FormData {
 
 export default function NewDormitoryPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, signInWithGoogle } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: "",
@@ -49,6 +49,31 @@ export default function NewDormitoryPage() {
     },
     floors: 1,
   });
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full space-y-8 p-8">
+          <div>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+              กรุณาเข้าสู่ระบบ
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              คุณต้องเข้าสู่ระบบก่อนเพิ่มหอพัก
+            </p>
+          </div>
+          <div>
+            <button
+              onClick={signInWithGoogle}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              เข้าสู่ระบบด้วย Google
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

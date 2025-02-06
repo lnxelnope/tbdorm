@@ -2,68 +2,30 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ฟังก์ชันตรวจสอบการเข้าสู่ระบบ
+    // ฟังก์ชันเช็คว่าเป็น user ที่ login แล้วหรือไม่
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    // ฟังก์ชันตรวจสอบว่าเป็นเจ้าของหอพักหรือไม่
-    function isDormitoryOwner(dormitoryId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/dormitories/$(dormitoryId)) &&
-        get(/databases/$(database)/documents/dormitories/$(dormitoryId)).data.ownerUid == request.auth.uid;
+    
+    // กฎสำหรับ collection dormitories
+    match /dormitories/{dormitoryId} {
+      // อนุญาตให้อ่านข้อมูลได้ทุกคน
+      allow read: if true;
+      
+      // อนุญาตให้เขียนข้อมูลได้เฉพาะ user ที่ login แล้ว
+      allow write: if isAuthenticated();
+      
+      // กฎสำหรับ subcollections
+      match /{document=**} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
     }
-
-    // ฟังก์ชันตรวจสอบว่าเป็นผู้เช่าหรือไม่
-    function isTenant(dormitoryId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/tenants/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/tenants/$(request.auth.uid)).data.dormitoryId == dormitoryId;
-    }
-
-    // ฟังก์ชันตรวจสอบว่าเป็นผู้ดูแลระบบหรือไม่
-    function isAdmin() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-
-    // กฎสำหรับคำขอแจ้งซ่อม
-    match /maintenance_requests/{requestId} {
-      // อ่านข้อมูล: เจ้าของหอพัก, ผู้เช่า (เฉพาะของตัวเอง), และผู้ดูแลระบบ
-      allow read: if isAdmin() ||
-        isDormitoryOwner(resource.data.dormitoryId) ||
-        (isTenant(resource.data.dormitoryId) && (resource.data.requesterUid == request.auth.uid));
-
-      // สร้างคำขอใหม่: ผู้เช่าและเจ้าของหอพัก
-      allow create: if isAuthenticated() &&
-        (request.resource.data.requesterUid == request.auth.uid) &&
-        (isDormitoryOwner(request.resource.data.dormitoryId) ||
-         isTenant(request.resource.data.dormitoryId));
-
-      // อัพเดทสถานะ: เจ้าของหอพักและผู้ดูแลระบบ
-      allow update: if isAdmin() ||
-        isDormitoryOwner(resource.data.dormitoryId);
-
-      // ลบคำขอ: เจ้าของหอพักและผู้ดูแลระบบ
-      allow delete: if isAdmin() ||
-        isDormitoryOwner(resource.data.dormitoryId);
-    }
-
-    // กฎสำหรับบันทึกการแจ้งซ่อม
-    match /maintenance_notes/{noteId} {
-      // อ่านข้อมูล: เจ้าของหอพัก, ผู้เช่า (เฉพาะของตัวเอง), และผู้ดูแลระบบ
-      allow read: if isAdmin() ||
-        isDormitoryOwner(get(/databases/$(database)/documents/maintenance_requests/$(resource.data.requestId)).data.dormitoryId) ||
-        (isTenant(get(/databases/$(database)/documents/maintenance_requests/$(resource.data.requestId)).data.dormitoryId) &&
-         get(/databases/$(database)/documents/maintenance_requests/$(resource.data.requestId)).data.requesterUid == request.auth.uid);
-
-      // สร้างบันทึกใหม่: เจ้าของหอพักและผู้ดูแลระบบ
-      allow create: if isAdmin() ||
-        isDormitoryOwner(get(/databases/$(database)/documents/maintenance_requests/$(request.resource.data.requestId)).data.dormitoryId);
-
-      // อัพเดทและลบบันทึก: เจ้าของหอพักและผู้ดูแลระบบ
-      allow update, delete: if isAdmin() ||
-        isDormitoryOwner(get(/databases/$(database)/documents/maintenance_requests/$(resource.data.requestId)).data.dormitoryId);
+    
+    // กฎสำหรับ collection users
+    match /users/{userId} {
+      // อนุญาตให้อ่านและเขียนข้อมูลได้เฉพาะเจ้าของข้อมูล
+      allow read, write: if request.auth.uid == userId;
     }
   }
 } 

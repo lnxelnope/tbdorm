@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -14,25 +14,23 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-console.log("Firebase config:", {
-  apiKey: firebaseConfig.apiKey,
-  projectId: firebaseConfig.projectId,
-  authDomain: firebaseConfig.authDomain
-});
+console.log('Firebase config:', firebaseConfig);
 
 // Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-console.log("Firebase app initialized:", app.name);
+let app;
+if (!getApps().length) {
+  app = initializeApp(firebaseConfig);
+  console.log('Firebase app initialized:', app.name);
+} else {
+  app = getApps()[0];
+  console.log('Using existing Firebase app:', app.name);
+}
 
-// Initialize Firestore
 const db = getFirestore(app);
-
 const auth = getAuth(app);
-console.log("Firebase auth initialized");
-
-// Initialize Storage
 const storage = getStorage(app);
-console.log("Firebase storage initialized");
+
+console.log('Firebase services initialized');
 
 // Initialize Analytics and export it
 let analytics = null;
@@ -41,4 +39,4 @@ if (typeof window !== 'undefined') {
   isSupported().then(yes => yes && (analytics = getAnalytics(app)));
 }
 
-export { app, db, auth, storage, analytics };
+export { db, auth, storage, analytics };

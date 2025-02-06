@@ -36,7 +36,7 @@ export default function Sidebar() {
           <div className="flex flex-shrink-0 items-center px-4">
             <img
               className="h-8 w-auto"
-              src="/logo.png"
+              src="/next.svg"
               alt="ระบบจัดการหอพัก"
             />
           </div>
