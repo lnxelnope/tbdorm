@@ -27,8 +27,12 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: "/api/:path*",
-        destination: "https://api.openai.com/:path*",
+        source: "/api/anthropic/:path*",
+        destination: "https://api.anthropic.com/:path*",
+      },
+      {
+        source: "/api/replicate/:path*",
+        destination: "https://api.replicate.com/:path*",
       },
     ];
   },
