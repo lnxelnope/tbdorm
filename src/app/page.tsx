@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase/firebaseConfig";
+import { db } from "@/lib/firebase/firebase";
 import { toast } from "sonner";
-import { Building, Users, FileText, AlertTriangle } from "lucide-react";
-import DashboardCard from "@/components/dashboard/DashboardCard";
+import { Building2, Users, FileText, AlertTriangle, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import DormitoryList from "@/components/dashboard/DormitoryList";
 import RecentActivities from "@/components/dashboard/RecentActivities";
 import FraudAlerts from "@/components/dashboard/FraudAlerts";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import Link from "next/link";
 
 interface DashboardStats {
   totalDormitories: number;
@@ -24,6 +25,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const { user, loading, signInWithGoogle } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     totalDormitories: 0,
     totalTenants: 0,
@@ -39,11 +41,17 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadDashboardStats();
-  }, []);
+    console.log('DashboardPage mounted, user:', user?.email);
+    if (!loading && user) {
+      loadDashboardStats();
+    }
+  }, [user, loading]);
 
   const loadDashboardStats = async () => {
     try {
+      console.log('Loading dashboard stats...');
+      setIsLoading(true);
+      
       const now = new Date();
       const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const firstDayOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -79,43 +87,36 @@ export default function DashboardPage() {
       const lastMonthTenants = lastMonthTenantsSnapshot.size;
 
       // โหลดจำนวนบิลที่ยังไม่ได้ชำระ
-      const unpaidBillsQuery = query(
-        collection(db, "bills"),
-        where("status", "==", "pending"),
-        where("dueDate", ">=", firstDayOfMonth),
-        where("dueDate", "<", firstDayOfNextMonth)
-      );
-      const unpaidBillsSnapshot = await getDocs(unpaidBillsQuery);
-      const unpaidBills = unpaidBillsSnapshot.size;
+      const billsSnapshot = await getDocs(collection(db, "bills"));
+      const unpaidBills = billsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return data.status === "pending" && 
+               data.dueDate >= firstDayOfMonth && 
+               data.dueDate < firstDayOfNextMonth;
+      }).length;
 
-      // โหลดจำนวนบิลที่ยังไม่ได้ชำระเดือนที่แล้ว
-      const lastMonthUnpaidBillsQuery = query(
-        collection(db, "bills"),
-        where("status", "==", "pending"),
-        where("dueDate", ">=", firstDayOfLastMonth),
-        where("dueDate", "<", firstDayOfMonth)
-      );
-      const lastMonthUnpaidBillsSnapshot = await getDocs(lastMonthUnpaidBillsQuery);
-      const lastMonthUnpaidBills = lastMonthUnpaidBillsSnapshot.size;
+      const lastMonthUnpaidBills = billsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return data.status === "pending" && 
+               data.dueDate >= firstDayOfLastMonth && 
+               data.dueDate < firstDayOfMonth;
+      }).length;
 
       // โหลดจำนวนการแจ้งเตือนทุจริตที่รอดำเนินการ
-      const pendingFraudAlertsQuery = query(
-        collection(db, "fraud_alerts"),
-        where("status", "in", ["pending", "investigating"]),
-        where("createdAt", ">=", firstDayOfMonth),
-        where("createdAt", "<", firstDayOfNextMonth)
-      );
-      const pendingFraudAlertsSnapshot = await getDocs(pendingFraudAlertsQuery);
-      const pendingFraudAlerts = pendingFraudAlertsSnapshot.size;
+      const fraudAlertsSnapshot = await getDocs(collection(db, "fraud_alerts"));
+      const pendingFraudAlerts = fraudAlertsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return ["pending", "investigating"].includes(data.status) && 
+               data.createdAt >= firstDayOfMonth && 
+               data.createdAt < firstDayOfNextMonth;
+      }).length;
 
-      const lastMonthPendingFraudAlertsQuery = query(
-        collection(db, "fraud_alerts"),
-        where("status", "in", ["pending", "investigating"]),
-        where("createdAt", ">=", firstDayOfLastMonth),
-        where("createdAt", "<", firstDayOfMonth)
-      );
-      const lastMonthPendingFraudAlertsSnapshot = await getDocs(lastMonthPendingFraudAlertsQuery);
-      const lastMonthPendingFraudAlerts = lastMonthPendingFraudAlertsSnapshot.size;
+      const lastMonthPendingFraudAlerts = fraudAlertsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return ["pending", "investigating"].includes(data.status) && 
+               data.createdAt >= firstDayOfLastMonth && 
+               data.createdAt < firstDayOfMonth;
+      }).length;
 
       // คำนวณ trends
       const calculateTrendPercentage = (current: number, previous: number) => {
@@ -137,6 +138,8 @@ export default function DashboardPage() {
         pendingFraudAlerts,
         trends,
       });
+      
+      console.log('Dashboard stats loaded successfully');
     } catch (error) {
       console.error("Error loading dashboard stats:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล Dashboard");
@@ -145,27 +148,62 @@ export default function DashboardPage() {
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <p className="text-gray-500">กำลังโหลด...</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="loading-spinner w-8 h-8"></div>
+          <p className="mt-2 text-slate-600">กำลังโหลด...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white font-bold mx-auto mb-4">
+              D
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">ยินดีต้อนรับสู่ระบบจัดการหอพัก</h1>
+            <p className="text-slate-600">กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ</p>
+          </div>
+          
+          <div className="card">
+            <button
+              onClick={signInWithGoogle}
+              className="btn btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <img src="/google.svg" alt="Google" className="w-5 h-5" />
+              เข้าสู่ระบบด้วย Google
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
+  const getTrendIcon = (value: number) => {
+    if (value > 0) return <ArrowUp className="w-4 h-4 text-green-500" />;
+    if (value < 0) return <ArrowDown className="w-4 h-4 text-red-500" />;
+    return <Minus className="w-4 h-4 text-slate-400" />;
+  };
+
+  const getTrendColor = (value: number) => {
+    if (value > 0) return "text-green-600";
+    if (value < 0) return "text-red-600";
+    return "text-slate-600";
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
+    <div className="min-h-screen bg-slate-50 py-8">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-            แผงควบคุม
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-slate-900">แผงควบคุม</h1>
+          <p className="mt-1 text-sm text-slate-600">
             ภาพรวมของระบบจัดการหอพัก
           </p>
         </div>
@@ -173,109 +211,143 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-8">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <DashboardCard
-              title="หอพักทั้งหมด"
-              value={stats.totalDormitories}
-              icon={Building}
-              trend={{
-                value: stats.trends.dormitories,
-                label: "จากเดือนที่แล้ว",
-                direction: stats.trends.dormitories > 0 ? "up" : stats.trends.dormitories < 0 ? "down" : "stable"
-              }}
-            />
-            <DashboardCard
-              title="ผู้เช่าทั้งหมด"
-              value={stats.totalTenants}
-              icon={Users}
-              trend={{
-                value: stats.trends.tenants,
-                label: "จากเดือนที่แล้ว",
-                direction: stats.trends.tenants > 0 ? "up" : stats.trends.tenants < 0 ? "down" : "stable"
-              }}
-            />
-            <DashboardCard
-              title="บิลที่ยังไม่ชำระ"
-              value={stats.unpaidBills}
-              icon={FileText}
-              trend={{
-                value: stats.trends.unpaidBills,
-                label: "จากเดือนที่แล้ว",
-                direction: stats.trends.unpaidBills > 0 ? "up" : stats.trends.unpaidBills < 0 ? "down" : "stable"
-              }}
-            />
-            <DashboardCard
-              title="การแจ้งเตือนทุจริต"
-              value={stats.pendingFraudAlerts}
-              icon={AlertTriangle}
-              trend={{
-                value: stats.trends.fraudAlerts,
-                label: "จากเดือนที่แล้ว",
-                direction: stats.trends.fraudAlerts > 0 ? "up" : stats.trends.fraudAlerts < 0 ? "down" : "stable"
-              }}
-            />
+            <div className="card">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <Building2 className="w-6 h-6 text-blue-600" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">หอพักทั้งหมด</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-slate-900">{stats.totalDormitories}</p>
+                    {stats.trends.dormitories !== 0 && (
+                      <div className="flex items-center gap-1">
+                        {getTrendIcon(stats.trends.dormitories)}
+                        <span className={`text-sm font-medium ${getTrendColor(stats.trends.dormitories)}`}>
+                          {Math.abs(stats.trends.dormitories)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center">
+                    <Users className="w-6 h-6 text-green-600" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">ผู้เช่าทั้งหมด</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-slate-900">{stats.totalTenants}</p>
+                    {stats.trends.tenants !== 0 && (
+                      <div className="flex items-center gap-1">
+                        {getTrendIcon(stats.trends.tenants)}
+                        <span className={`text-sm font-medium ${getTrendColor(stats.trends.tenants)}`}>
+                          {Math.abs(stats.trends.tenants)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-yellow-50 flex items-center justify-center">
+                    <FileText className="w-6 h-6 text-yellow-600" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">บิลที่ยังไม่ชำระ</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-slate-900">{stats.unpaidBills}</p>
+                    {stats.trends.unpaidBills !== 0 && (
+                      <div className="flex items-center gap-1">
+                        {getTrendIcon(stats.trends.unpaidBills)}
+                        <span className={`text-sm font-medium ${getTrendColor(stats.trends.unpaidBills)}`}>
+                          {Math.abs(stats.trends.unpaidBills)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-red-50 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-red-600" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">การแจ้งเตือนทุจริต</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-slate-900">{stats.pendingFraudAlerts}</p>
+                    {stats.trends.fraudAlerts !== 0 && (
+                      <div className="flex items-center gap-1">
+                        {getTrendIcon(stats.trends.fraudAlerts)}
+                        <span className={`text-sm font-medium ${getTrendColor(stats.trends.fraudAlerts)}`}>
+                          {Math.abs(stats.trends.fraudAlerts)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Main Content */}
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             {/* Left Column */}
             <div className="grid grid-cols-1 gap-8">
-              <div className="bg-white shadow rounded-lg">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base font-semibold leading-7 text-gray-900">
-                      รายการหอพัก
-                    </h2>
-                    <a
-                      href="/dormitories"
-                      className="text-sm font-medium text-blue-600 hover:text-blue-500"
-                    >
-                      ดูทั้งหมด →
-                    </a>
-                  </div>
-                  <div className="mt-6">
-                    <DormitoryList />
-                  </div>
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="text-lg font-semibold text-slate-900">รายการหอพัก</h2>
+                  <Link href="/dormitories" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                    ดูทั้งหมด →
+                  </Link>
+                </div>
+                <div className="mt-6">
+                  <DormitoryList />
                 </div>
               </div>
             </div>
 
             {/* Right Column */}
             <div className="grid grid-cols-1 gap-8">
-              <div className="bg-white shadow rounded-lg">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base font-semibold leading-7 text-gray-900">
-                      กิจกรรมล่าสุด
-                    </h2>
-                    <a
-                      href="/activities"
-                      className="text-sm font-medium text-blue-600 hover:text-blue-500"
-                    >
-                      ดูทั้งหมด →
-                    </a>
-                  </div>
-                  <div className="mt-6">
-                    <RecentActivities />
-                  </div>
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="text-lg font-semibold text-slate-900">กิจกรรมล่าสุด</h2>
+                  <Link href="/activities" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                    ดูทั้งหมด →
+                  </Link>
+                </div>
+                <div className="mt-6">
+                  <RecentActivities />
                 </div>
               </div>
 
-              <div className="bg-white shadow rounded-lg">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base font-semibold leading-7 text-gray-900">
-                      การแจ้งเตือนทุจริต
-                    </h2>
-                    <a
-                      href="/fraud-alerts"
-                      className="text-sm font-medium text-blue-600 hover:text-blue-500"
-                    >
-                      ดูทั้งหมด →
-                    </a>
-                  </div>
-                  <div className="mt-6">
-                    <FraudAlerts />
-                  </div>
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="text-lg font-semibold text-slate-900">การแจ้งเตือนทุจริต</h2>
+                  <Link href="/fraud-alerts" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                    ดูทั้งหมด →
+                  </Link>
+                </div>
+                <div className="mt-6">
+                  <FraudAlerts />
                 </div>
               </div>
             </div>

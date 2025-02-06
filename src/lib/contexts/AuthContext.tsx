@@ -8,31 +8,50 @@ import { toast } from 'sonner';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  error: string | null;
   signInWithGoogle: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  error: null,
   signInWithGoogle: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('Auth state changed:', user?.email);
-      setUser(user);
-      setLoading(false);
-    });
+    try {
+      console.log('AuthProvider mounted');
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        console.log('Auth state changed:', user?.email);
+        setUser(user);
+        setLoading(false);
+        setError(null);
+      }, (error) => {
+        console.error('Auth state change error:', error);
+        setError(error.message);
+        setLoading(false);
+      });
 
-    return () => unsubscribe();
+      return () => {
+        console.log('AuthProvider unmounted');
+        unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error in AuthProvider:', error);
+      setError(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ');
+      setLoading(false);
+    }
   }, []);
 
   const signInWithGoogle = async () => {
     try {
+      setError(null);
       console.log('Attempting to sign in with Google...');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
@@ -49,14 +68,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (error.code === 'auth/popup-blocked') {
         toast.error('บราวเซอร์บล็อกป๊อปอัพ กรุณาอนุญาตให้เปิดป๊อปอัพ');
       } else {
+        setError(error.message);
         toast.error(`เกิดข้อผิดพลาดในการเข้าสู่ระบบ: ${error.message}`);
       }
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle }}>
-      {children}
+    <AuthContext.Provider value={{ user, loading, error, signInWithGoogle }}>
+      {error ? (
+        <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+            <h2 className="text-red-600 text-lg font-semibold mb-2">เกิดข้อผิดพลาด</h2>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="w-full bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700"
+            >
+              ลองใหม่
+            </button>
+          </div>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 }

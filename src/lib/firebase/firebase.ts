@@ -1,8 +1,8 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
-import { getAnalytics, isSupported } from "firebase/analytics";
+import { initializeApp, getApps, FirebaseApp } from "firebase/app";
+import { getFirestore, Firestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
+import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
+import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,26 +17,45 @@ const firebaseConfig = {
 console.log('Firebase config:', firebaseConfig);
 
 // Initialize Firebase
-let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-  console.log('Firebase app initialized:', app.name);
-} else {
-  app = getApps()[0];
-  console.log('Using existing Firebase app:', app.name);
-}
+let app: FirebaseApp;
+let db: Firestore;
+let auth: Auth;
+let storage: FirebaseStorage;
+let analytics: Analytics | null = null;
 
-const db = getFirestore(app);
-const auth = getAuth(app);
-const storage = getStorage(app);
-
-console.log('Firebase services initialized');
-
-// Initialize Analytics and export it
-let analytics = null;
 if (typeof window !== 'undefined') {
-  // Only initialize analytics on the client side
-  isSupported().then(yes => yes && (analytics = getAnalytics(app)));
+  try {
+    if (!getApps().length) {
+      app = initializeApp(firebaseConfig);
+      console.log('Firebase app initialized:', app.name);
+    } else {
+      app = getApps()[0];
+      console.log('Using existing Firebase app:', app.name);
+    }
+
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+
+    // ตรวจสอบว่าเป็น development environment หรือไม่
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Running in development mode');
+      // connectAuthEmulator(auth, 'http://localhost:9099');
+      // connectFirestoreEmulator(db, 'localhost', 8080);
+      // connectStorageEmulator(storage, 'localhost', 9199);
+    }
+
+    // Initialize Analytics only on client side
+    if (process.env.NODE_ENV === 'production') {
+      isSupported().then(yes => yes && (analytics = getAnalytics(app)));
+    }
+
+    console.log('Firebase services initialized successfully');
+  } catch (error) {
+    console.error('Error initializing Firebase:', error);
+  }
+} else {
+  console.log('Firebase initialization skipped (server-side)');
 }
 
 export { db, auth, storage, analytics };

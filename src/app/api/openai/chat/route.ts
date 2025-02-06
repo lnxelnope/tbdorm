@@ -1,24 +1,44 @@
-import OpenAI from 'openai';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
+import { StreamingTextResponse, Message } from 'ai';
 
 export const runtime = 'edge';
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '',
+  const response = await fetch('https://api.qwen.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.QWEN_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'qwen-max',
+      messages: messages.map((message: Message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      stream: true,
+    }),
   });
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4',
-    messages: messages.map((message: any) => ({
-      role: message.role,
-      content: message.content,
-    })),
-    stream: true,
+  // แปลง response เป็น ReadableStream
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+      } finally {
+        reader.releaseLock();
+        controller.close();
+      }
+    },
   });
 
-  const stream = OpenAIStream(response);
   return new StreamingTextResponse(stream);
 }
