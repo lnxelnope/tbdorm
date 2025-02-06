@@ -5,7 +5,7 @@ import { Dormitory, Tenant } from "@/types/dormitory";
 import EditTenantModal from "./EditTenantModal";
 import { toast } from "sonner";
 import { ChevronUp, ChevronDown, Loader2 } from "lucide-react";
-import { deleteTenant, deleteMultipleTenants } from "@/lib/firebase/firebaseUtils";
+import { deleteTenant, deleteMultipleTenants, queryTenants } from "@/lib/firebase/firebaseUtils";
 import Link from "next/link";
 import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,11 +22,12 @@ type SortField = 'name' | 'dormitory' | 'roomNumber' | 'startDate' | 'deposit' |
 
 export default function TenantList({
   dormitories,
-  tenants,
+  tenants: initialTenants,
   selectedDormitory,
   searchQuery,
   statusFilter,
 }: TenantListProps) {
+  const [tenants, setTenants] = useState(initialTenants);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedTenants, setSelectedTenants] = useState<string[]>([]);
@@ -402,7 +403,19 @@ export default function TenantList({
           onClose={() => setSelectedTenant(null)}
           onSuccess={() => {
             setSelectedTenant(null);
-            // TODO: Refresh tenant list from parent component
+            // Refresh tenant list
+            const loadTenants = async () => {
+              try {
+                const result = await queryTenants(selectedDormitory);
+                if (result.success && result.data) {
+                  setTenants(result.data);
+                }
+              } catch (error) {
+                console.error("Error loading tenants:", error);
+                toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้เช่า");
+              }
+            };
+            loadTenants();
           }}
           dormitories={dormitories}
         />
