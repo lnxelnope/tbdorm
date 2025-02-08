@@ -15,6 +15,7 @@ import {
   Wrench,
   Gauge,
   BarChart3,
+  MessageCircle,
 } from "lucide-react";
 
 interface NavItem {
@@ -60,6 +61,11 @@ const navItems: NavItem[] = [
     icon: <BarChart3 className="w-5 h-5" />,
   },
   {
+    href: "/chat",
+    label: "แชท AI",
+    icon: <MessageCircle className="w-5 h-5" />,
+  },
+  {
     href: "/settings",
     label: "ตั้งค่า",
     icon: <Settings className="w-5 h-5" />,
@@ -85,13 +91,17 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
       <Link
         href={item.href}
         className={cn(
-          "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+          "flex items-center gap-2 text-sm font-medium rounded-lg transition-colors",
+          isCollapsed ? "justify-center px-2" : "px-4",
+          "py-2",
           isActive
-            ? "bg-slate-800 text-white"
-            : "text-slate-300 hover:text-white hover:bg-slate-800"
+            ? "bg-gray-100 text-gray-900"
+            : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
         )}
       >
-        {item.icon}
+        <div className={cn("min-w-[20px]", isCollapsed && "flex justify-center")}>
+          {item.icon}
+        </div>
         {!isCollapsed && <span>{item.label}</span>}
       </Link>
     );
@@ -100,7 +110,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const NavSection = ({ items, title }: { items: NavItem[]; title?: string }) => (
     <div className="space-y-1">
       {title && !isCollapsed && (
-        <h3 className="px-3 text-xs font-semibold text-white/70 uppercase tracking-wider">
+        <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
           {title}
         </h3>
       )}
@@ -113,13 +123,20 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   return (
     <div className="relative h-full">
       <nav className={cn(
-        "h-full bg-slate-900 text-white transition-all duration-300",
+        "h-full bg-white text-gray-700 border-r border-gray-100 shadow-sm transition-all duration-300 relative",
         isCollapsed ? "w-16" : "w-64"
       )}>
         <div className="p-4">
           <div className="flex items-center justify-between mb-8">
-            {!isCollapsed && (
-              <h2 className="text-xl font-bold">TB Dorm</h2>
+            {isCollapsed ? (
+              <div className="flex items-center justify-center w-full">
+                <h2 className="text-xl font-bold text-blue-600">TB</h2>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold text-blue-600">TB OSS</h2>
+                <p className="text-sm text-gray-500">one stop service</p>
+              </div>
             )}
           </div>
 
@@ -134,7 +151,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <button
           onClick={onToggle}
           className={cn(
-            "absolute -right-4 top-24 z-50 bg-slate-800 text-white p-2 rounded-full shadow-lg hover:bg-slate-700 transition-all duration-300",
+            "absolute -right-4 bottom-8 z-50 bg-white text-gray-700 p-2 rounded-full shadow-sm border border-gray-100 hover:bg-gray-50 transition-all duration-300",
           )}
         >
           {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
