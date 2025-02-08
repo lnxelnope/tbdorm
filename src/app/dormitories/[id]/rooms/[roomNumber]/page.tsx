@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Edit } from "lucide-react";
 import Link from "next/link";
-import { getRooms, getRoomTypes, getDormitory, queryTenants } from "@/lib/firebase/firebaseUtils";
+import { getRooms, getRoomTypes, getDormitory, queryTenants, updateRoom } from "@/lib/firebase/firebaseUtils";
 import { Room, RoomType, Tenant } from "@/types/dormitory";
 import { toast } from "sonner";
 import { calculateTotalPrice } from "../utils";
+import { useParams } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
 
 interface DormitoryConfig {
   additionalFees: {
@@ -26,12 +29,234 @@ interface DormitoryConfig {
   };
 }
 
-export default function RoomDetailsPage({ params }: { params: { id: string; roomNumber: string } }) {
+// Modal Component
+function EditRoomModal({ 
+  isOpen, 
+  onClose, 
+  room, 
+  roomTypes, 
+  dormId,
+  totalFloors,
+  onSuccess 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  room: Room; 
+  roomTypes: RoomType[]; 
+  dormId: string;
+  totalFloors: number;
+  onSuccess: () => void;
+}) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    number: room.number,
+    floor: room.floor,
+    roomType: room.roomType,
+    hasAirConditioner: room.hasAirConditioner,
+    hasParking: room.hasParking,
+    status: room.status as Room["status"],
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.number.trim()) {
+      toast.error("กรุณากรอกเลขห้อง");
+      return;
+    }
+
+    if (!formData.roomType) {
+      toast.error("กรุณาเลือกรูปแบบห้อง");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const result = await updateRoom(dormId, room.id, {
+        ...formData,
+        number: formData.number.trim(),
+      });
+
+      if (result.success) {
+        toast.success("แก้ไขห้องพักเรียบร้อย");
+        onSuccess();
+        onClose();
+      } else {
+        toast.error("ไม่สามารถแก้ไขห้องพักได้");
+      }
+    } catch (error) {
+      console.error("Error updating room:", error);
+      toast.error("เกิดข้อผิดพลาดในการแก้ไขห้องพัก");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-25 backdrop-blur-sm flex justify-center items-center z-50">
+      <div className="bg-white rounded-lg w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900">แก้ไขข้อมูลห้องพัก</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              เลขห้อง <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.number}
+              onChange={(e) =>
+                setFormData({ ...formData, number: e.target.value })
+              }
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ชั้น <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-3 gap-4">
+              {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
+                <label
+                  key={floor}
+                  className="relative flex items-center space-x-2 cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name="floor"
+                    required
+                    value={floor}
+                    checked={formData.floor === floor}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        floor: parseInt(e.target.value),
+                      })
+                    }
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    ชั้น {floor}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              รูปแบบห้อง <span className="text-red-500">*</span>
+            </label>
+            <select
+              required
+              value={formData.roomType}
+              onChange={(e) =>
+                setFormData({ ...formData, roomType: e.target.value })
+              }
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            >
+              <option value="">เลือกรูปแบบห้อง</option>
+              {roomTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name} - {type.basePrice.toLocaleString()} บาท/เดือน
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              สถานะ <span className="text-red-500">*</span>
+            </label>
+            <select
+              required
+              value={formData.status}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  status: e.target.value as Room["status"],
+                })
+              }
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            >
+              <option value="available">ว่าง</option>
+              <option value="occupied">มีผู้เช่า</option>
+              <option value="maintenance">ปรับปรุง</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.hasAirConditioner}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    hasAirConditioner: e.target.checked,
+                  })
+                }
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-600">แอร์</span>
+            </label>
+
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.hasParking}
+                onChange={(e) =>
+                  setFormData({ ...formData, hasParking: e.target.checked })
+                }
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-600">ที่จอดรถ</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default function RoomDetailsPage() {
+  const params = useParams();
+  const dormId = params.id as string;
+  const roomNumber = params.roomNumber as string;
   const [isLoading, setIsLoading] = useState(true);
   const [room, setRoom] = useState<Room | null>(null);
   const [roomType, setRoomType] = useState<RoomType | null>(null);
   const [dormitoryName, setDormitoryName] = useState("");
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
+  const [totalFloors, setTotalFloors] = useState(1);
   const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig>({
     additionalFees: {
       airConditioner: null,
@@ -43,25 +268,28 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
       }
     }
   });
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  useEffect(() => {
     const loadData = async () => {
       try {
+      setIsLoading(true);
         const [roomsResult, roomTypesResult, dormitoryResult, tenantsResult] = await Promise.all([
-          getRooms(params.id),
-          getRoomTypes(params.id),
-          getDormitory(params.id),
-          queryTenants(params.id)
+        getRooms(dormId),
+        getRoomTypes(dormId),
+        getDormitory(dormId),
+        queryTenants(dormId)
         ]);
 
         if (roomsResult.success && roomsResult.data) {
-          const foundRoom = roomsResult.data.find(r => r.number === params.roomNumber);
+        const foundRoom = roomsResult.data.find(r => r.number === roomNumber);
           if (foundRoom) {
             setRoom(foundRoom);
           }
         }
 
         if (roomTypesResult.success && roomTypesResult.data) {
+        setRoomTypes(roomTypesResult.data);
           const foundRoomType = roomTypesResult.data.find(t => t.id === room?.roomType);
           if (foundRoomType) {
             setRoomType(foundRoomType);
@@ -70,6 +298,7 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
 
         if (dormitoryResult.success && dormitoryResult.data) {
           setDormitoryName(dormitoryResult.data.name);
+        setTotalFloors(dormitoryResult.data.totalFloors || 1);
           setDormitoryConfig({
             additionalFees: {
               airConditioner: dormitoryResult.data.config?.additionalFees?.airConditioner ?? null,
@@ -88,7 +317,7 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
         }
 
         if (tenantsResult.success && tenantsResult.data) {
-          const foundTenant = tenantsResult.data.find(t => t.roomNumber === params.roomNumber);
+        const foundTenant = tenantsResult.data.find(t => t.roomNumber === roomNumber);
           if (foundTenant) {
             setCurrentTenant(foundTenant);
           }
@@ -101,8 +330,11 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
       }
     };
 
+  useEffect(() => {
+    if (dormId && roomNumber) {
     loadData();
-  }, [params.id, params.roomNumber, room?.roomType]);
+    }
+  }, [dormId, roomNumber, room?.roomType]);
 
   if (isLoading) {
     return (
@@ -118,7 +350,7 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
         <div className="bg-white rounded-lg p-8 text-center">
           <h3 className="text-lg font-medium text-gray-900 mb-2">ไม่พบข้อมูลห้องพัก</h3>
           <Link
-            href={`/dormitories/${params.id}/rooms`}
+            href={`/dormitories/${dormId}/rooms`}
             className="text-blue-600 hover:text-blue-900"
           >
             กลับไปหน้ารายการห้องพัก
@@ -132,18 +364,25 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between mb-2">
         <Link
-          href={`/dormitories/${params.id}/rooms`}
+          href={`/dormitories/${dormId}/rooms`}
           className="flex items-center text-sm text-gray-500 hover:text-gray-700"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
           กลับ
         </Link>
+        <button
+          onClick={() => setIsEditModalOpen(true)}
+          className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
+        >
+          <Edit className="w-4 h-4 mr-1" />
+          แก้ไข
+        </button>
+      </div>
         <h1 className="text-xl font-semibold text-gray-900">
           {dormitoryName} - ห้อง {room.number}
         </h1>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* ข้อมูลห้องพัก */}
@@ -317,6 +556,22 @@ export default function RoomDetailsPage({ params }: { params: { id: string; room
           </div>
         )}
       </div>
+
+      {room && (
+        <EditRoomModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          room={room}
+          roomTypes={roomTypes}
+          dormId={dormId}
+          totalFloors={totalFloors}
+          onSuccess={() => {
+            if (dormId && roomNumber) {
+              loadData();
+            }
+          }}
+        />
+      )}
     </div>
   );
 } 

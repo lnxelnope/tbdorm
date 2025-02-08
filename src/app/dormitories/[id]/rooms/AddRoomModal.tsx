@@ -14,6 +14,7 @@ interface AddRoomModalProps {
   onClose: () => void;
   onSuccess: (room: Room) => void;
   isOpen: boolean;
+  totalFloors: number;
 }
 
 // เพิ่มฟังก์ชั่นสำหรับแปลง range string เป็น array ของเลขห้อง
@@ -63,6 +64,7 @@ export default function AddRoomModal({
   dormitoryId,
   onSuccess,
   roomTypes: initialRoomTypes,
+  totalFloors,
 }: AddRoomModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -236,47 +238,31 @@ export default function AddRoomModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               ชั้น <span className="text-red-500">*</span>
             </label>
-            <div className="space-y-2">
-              <div className="flex items-center gap-8">
-                <div className="flex items-center">
+            <div className="grid grid-cols-3 gap-4">
+              {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
+                <label
+                  key={floor}
+                  className="relative flex items-center space-x-2 cursor-pointer"
+                >
                   <input
                     type="radio"
-                    id="floor1"
                     name="floor"
-                    value="1"
-                    checked={formData.floor === 1}
+                    required
+                    value={floor}
+                    checked={formData.floor === floor}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
                         floor: parseInt(e.target.value),
                       })
                     }
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
-                  <label htmlFor="floor1" className="ml-2 block text-sm text-gray-700">
-                    ชั้น 1
-                  </label>
-                </div>
-                <div className="flex items-center">
-                  <input
-                    type="radio"
-                    id="floor2"
-                    name="floor"
-                    value="2"
-                    checked={formData.floor === 2}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        floor: parseInt(e.target.value),
-                      })
-                    }
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                  />
-                  <label htmlFor="floor2" className="ml-2 block text-sm text-gray-700">
-                    ชั้น 2
-                  </label>
-                </div>
-              </div>
+                  <span className="text-sm text-gray-700">
+                    ชั้น {floor}
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
 

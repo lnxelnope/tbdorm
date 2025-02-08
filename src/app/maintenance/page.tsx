@@ -117,7 +117,7 @@ export default function MaintenancePage() {
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-white">ระบบแจ้งซ่อม</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">ระบบแจ้งซ่อม</h1>
           <p className="mt-1 text-sm text-gray-500">
             จัดการคำขอแจ้งซ่อมและติดตามสถานะการดำเนินการ
           </p>
@@ -167,7 +167,7 @@ export default function MaintenancePage() {
         ) : requests.length === 0 ? (
           <div className="p-8 text-center">
             <Wrench className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-white">ไม่มีคำขอแจ้งซ่อม</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">ไม่มีคำขอแจ้งซ่อม</h3>
             <p className="mt-1 text-sm text-gray-500">เริ่มต้นโดยการสร้างคำขอแจ้งซ่อมใหม่</p>
           </div>
         ) : (

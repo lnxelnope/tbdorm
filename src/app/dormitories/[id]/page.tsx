@@ -8,6 +8,9 @@ import { getDormitory, getDormitoryStats } from "@/lib/firebase/firebaseUtils";
 import { Dormitory, DormitoryStats } from "@/types/dormitory";
 import { useRouter, useParams } from "next/navigation";
 import React from "react";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebaseConfig";
+import { Room } from "@/types/room";
 
 // แยก Loading component
 function LoadingSpinner() {
@@ -28,7 +31,12 @@ export default function DormitoryPage() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [dormitory, setDormitory] = useState<Dormitory | null>(null);
-  const [stats, setStats] = useState<DormitoryStats | null>(null);
+  const [stats, setStats] = useState<{
+    totalRooms: number;
+    occupiedRooms: number;
+    availableRooms: number;
+    maintenanceRooms: number;
+  } | null>(null);
 
   const menuItems = [
     {
@@ -75,32 +83,41 @@ export default function DormitoryPage() {
   ];
 
   useEffect(() => {
-    if (!dormId) return;
-
     const fetchDormitory = async () => {
       try {
-        const result = await getDormitory(dormId);
-        if (result.success && result.data) {
-          setDormitory(result.data);
-          const statsResult = await getDormitoryStats(dormId);
-          if (statsResult.success && statsResult.data) {
-            setStats(statsResult.data);
-          }
-        } else {
-          toast.error("ไม่พบข้อมูลหอพัก");
-          router.push("/dormitories");
+        setIsLoading(true);
+        const docRef = doc(db, "dormitories", dormId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          setDormitory({ id: docSnap.id, ...docSnap.data() } as Dormitory);
+          
+          // โหลดข้อมูลสถิติห้องพัก
+          const roomsRef = collection(db, "dormitories", dormId, "rooms");
+          const roomsSnap = await getDocs(roomsRef);
+          const rooms = roomsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Room[];
+          
+          const stats = {
+            totalRooms: rooms.length,
+            occupiedRooms: rooms.filter(room => room.status === 'occupied').length,
+            availableRooms: rooms.filter(room => room.status === 'available').length,
+            maintenanceRooms: rooms.filter(room => room.status === 'maintenance').length,
+          };
+          
+          setStats(stats);
         }
       } catch (error) {
         console.error("Error fetching dormitory:", error);
         toast.error("ไม่สามารถโหลดข้อมูลหอพักได้");
-        router.push("/dormitories");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchDormitory();
-  }, [dormId, router]);
+    if (dormId) {
+      fetchDormitory();
+    }
+  }, [dormId]);
 
   if (!dormId) {
     return <LoadingSpinner />;
@@ -155,7 +172,7 @@ export default function DormitoryPage() {
             </Link>
           </div>
         </div>
-        <h1 className="text-2xl font-semibold text-white">{dormitory.name}</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">{dormitory.name}</h1>
         <p className="mt-1 text-sm text-gray-500">{dormitory.address}</p>
       </div>
 
@@ -170,7 +187,7 @@ export default function DormitoryPage() {
             <div className="flex items-center">
               <item.icon className="h-8 w-8 text-blue-600" />
               <div className="ml-4">
-                <h3 className="text-lg font-medium text-white">
+                <h3 className="text-lg font-medium text-gray-900">
                   {item.name}
                 </h3>
               </div>
@@ -181,11 +198,11 @@ export default function DormitoryPage() {
 
       <div className="bg-white shadow rounded-lg divide-y divide-gray-200">
         <div className="p-6">
-          <h2 className="text-lg font-medium text-white mb-4">ข้อมูลทั่วไป</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">ข้อมูลทั่วไป</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
             <div>
               <dt className="text-sm font-medium text-gray-500">ชื่อหอพัก</dt>
-              <dd className="mt-1 text-sm text-white">{dormitory.name}</dd>
+              <dd className="mt-1 text-sm text-gray-900">{dormitory.name}</dd>
             </div>
             
             <div>
@@ -201,24 +218,24 @@ export default function DormitoryPage() {
 
             <div>
               <dt className="text-sm font-medium text-gray-500">ที่อยู่</dt>
-              <dd className="mt-1 text-sm text-white">{dormitory.address || "-"}</dd>
+              <dd className="mt-1 text-sm text-gray-900">{dormitory.address || "-"}</dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">เบอร์โทรศัพท์</dt>
-              <dd className="mt-1 text-sm text-white">{dormitory.phone || "-"}</dd>
+              <dd className="mt-1 text-sm text-gray-900">{dormitory.phone || "-"}</dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">จำนวนชั้น</dt>
-              <dd className="mt-1 text-sm text-white">
+              <dd className="mt-1 text-sm text-gray-900">
                 {dormitory.totalFloors === 0 ? "ผสม (มีทั้ง 1 ชั้นและ 2 ชั้น)" : `${dormitory.totalFloors} ชั้น`}
               </dd>
             </div>
 
             <div>
               <dt className="text-sm font-medium text-gray-500">พิกัด</dt>
-              <dd className="mt-1 text-sm text-white">
+              <dd className="mt-1 text-sm text-gray-900">
                 {dormitory.location?.latitude && dormitory.location?.longitude ? (
                   <a
                     href={`https://www.google.com/maps?q=${dormitory.location.latitude},${dormitory.location.longitude}`}
@@ -237,14 +254,14 @@ export default function DormitoryPage() {
         </div>
 
         <div className="p-6">
-          <h2 className="text-lg font-medium text-white mb-4">สิ่งอำนวยความสะดวก</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">สิ่งอำนวยความสะดวก</h2>
           {dormitory.facilities && dormitory.facilities.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">ความปลอดภัย</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">ความปลอดภัย</h3>
                 <ul className="space-y-1">
                   {["กล้องวงจรปิด", "ระบบคีย์การ์ด", "รปภ."].map(facility => (
-                    <li key={facility} className="flex items-center text-sm">
+                    <li key={facility} className="flex items-center text-sm text-gray-700">
                       {dormitory.facilities?.includes(facility) ? (
                         <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
                       ) : (
@@ -257,10 +274,10 @@ export default function DormitoryPage() {
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">อินเทอร์เน็ต</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">อินเทอร์เน็ต</h3>
                 <ul className="space-y-1">
                   {["Wi-Fi", "อินเทอร์เน็ตไฟเบอร์"].map(facility => (
-                    <li key={facility} className="flex items-center text-sm">
+                    <li key={facility} className="flex items-center text-sm text-gray-700">
                       {dormitory.facilities?.includes(facility) ? (
                         <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
                       ) : (
@@ -273,10 +290,10 @@ export default function DormitoryPage() {
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">ที่จอดรถ</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">ที่จอดรถ</h3>
                 <ul className="space-y-1">
                   {["ที่จอดรถยนต์", "ที่จอดรถมอเตอร์ไซค์", "ที่จอดรถมีหลังคา"].map(facility => (
-                    <li key={facility} className="flex items-center text-sm">
+                    <li key={facility} className="flex items-center text-sm text-gray-700">
                       {dormitory.facilities?.includes(facility) ? (
                         <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
                       ) : (
@@ -289,10 +306,10 @@ export default function DormitoryPage() {
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">สิ่งอำนวยความสะดวกทั่วไป</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">สิ่งอำนวยความสะดวกทั่วไป</h3>
                 <ul className="space-y-1">
                   {["ลิฟต์", "ร้านซัก-รีด", "เครื่องซักผ้าหยอดเหรียญ"].map(facility => (
-                    <li key={facility} className="flex items-center text-sm">
+                    <li key={facility} className="flex items-center text-sm text-gray-700">
                       {dormitory.facilities?.includes(facility) ? (
                         <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
                       ) : (
@@ -305,10 +322,10 @@ export default function DormitoryPage() {
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">ร้านค้าและบริการ</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">ร้านค้าและบริการ</h3>
                 <ul className="space-y-1">
                   {["ร้านสะดวกซื้อ", "ร้านอาหาร", "ตู้น้ำดื่มหยอดเหรียญ"].map(facility => (
-                    <li key={facility} className="flex items-center text-sm">
+                    <li key={facility} className="flex items-center text-sm text-gray-700">
                       {dormitory.facilities?.includes(facility) ? (
                         <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
                       ) : (
@@ -326,7 +343,7 @@ export default function DormitoryPage() {
         </div>
 
         <div className="p-6">
-          <h2 className="text-lg font-medium text-white mb-4">สถิติห้องพัก</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">สถิติห้องพัก</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <dt className="text-sm font-medium text-blue-900">จำนวนห้องทั้งหมด</dt>

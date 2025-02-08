@@ -98,94 +98,91 @@ export default function TenantsPage() {
     return (
       <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
         <div className="text-center space-y-4">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
-          <p className="text-sm text-white/60">กำลังโหลดข้อมูล...</p>
+          <Loader2 className="w-8 h-8 text-gray-500 animate-spin mx-auto" />
+          <p className="text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <Card className="container mx-auto py-8">
-      <CardHeader>
-        <div className="flex items-center justify-between">
+    <div>
+      <Card className="container mx-auto py-8 bg-white shadow-lg border border-gray-100">
+        <CardHeader>
           <div>
-            <CardTitle className="text-2xl font-semibold text-white">รายชื่อผู้เช่า</CardTitle>
+            <CardTitle className="text-2xl font-semibold text-gray-900">รายชื่อผู้เช่า</CardTitle>
             <CardDescription className="text-gray-500">
               รายการแสดงผู้เช่าทั้งหมดในระบบ สามารถค้นหา กรอง
               และดูรายละเอียดของผู้เช่าแต่ละคนได้
             </CardDescription>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors cursor-pointer"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            เพิ่มผู้เช่า
-          </button>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent>
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <Search className="h-4 w-4 text-white/40" />
+        <CardContent>
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <Search className="h-4 w-4 text-gray-500" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="ค้นหาผู้เช่า..."
+                  className="block w-full rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-4 text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-gray-200 sm:text-sm"
+                />
               </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ค้นหาผู้เช่า..."
-                className="block w-full rounded-lg border-0 bg-white/5 py-2 pl-10 pr-4 text-white placeholder:text-white/40 focus:ring-2 focus:ring-blue-500/50 sm:text-sm"
-              />
-            </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-white/40" />
-                <select
-                  value={selectedDormitory}
-                  onChange={(e) => setSelectedDormitory(e.target.value)}
-                  className="block w-full rounded-lg border-0 bg-white/5 py-2 pl-3 pr-10 text-white focus:ring-2 focus:ring-blue-500/50 sm:text-sm"
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <select
+                    value={selectedDormitory}
+                    onChange={(e) => setSelectedDormitory(e.target.value)}
+                    className="block w-full rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-10 text-gray-900 focus:ring-2 focus:ring-gray-200 sm:text-sm shadow-sm"
+                  >
+                    <option value="">ทุกหอพัก</option>
+                    {dormitories.map((dormitory) => (
+                      <option key={dormitory.id} value={dormitory.id}>
+                        {dormitory.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200 border border-gray-200 shadow-sm transition-colors"
                 >
-                  <option value="">ทุกหอพัก</option>
-                  {dormitories.map((dormitory) => (
-                    <option key={dormitory.id} value={dormitory.id}>
-                      {dormitory.name}
-                    </option>
-                  ))}
-                </select>
+                  <Download className="mr-2 h-4 w-4" />
+                  ส่งออก CSV
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="flex items-center rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/20 transition-colors"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                ส่งออก CSV
-              </button>
             </div>
-          </div>
 
-          <TenantList
-            dormitories={dormitories}
-            tenants={tenants}
-            selectedDormitory={selectedDormitory}
-            searchQuery={searchQuery}
-            statusFilter=""
-          />
-        </div>
-      </CardContent>
+            <TenantList
+              dormitories={dormitories}
+              tenants={tenants}
+              selectedDormitory={selectedDormitory}
+              searchQuery={searchQuery}
+              statusFilter=""
+              onAddClick={() => setIsAddModalOpen(true)}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <AddTenantModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         dormitories={dormitories}
-        onSuccess={loadTenants}
+        onSuccess={() => {
+          setIsAddModalOpen(false);
+          loadTenants();
+        }}
       />
-    </Card>
+    </div>
   );
 } 

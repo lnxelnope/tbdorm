@@ -286,7 +286,7 @@ export default function MeterReadingPage() {
           <Link href="/" className="text-gray-500 hover:text-gray-700 mr-4">
             <ArrowLeft className="w-6 h-6" />
           </Link>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-gray-900">
             บันทึกค่ามิเตอร์ไฟฟ้า
           </h1>
         </div>
@@ -365,7 +365,7 @@ export default function MeterReadingPage() {
         <div className="bg-white shadow rounded-lg overflow-hidden">
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-medium text-white">รายการห้อง</h2>
+              <h2 className="text-lg font-medium text-gray-900">รายการห้อง</h2>
             </div>
 
             <div className="overflow-x-auto">

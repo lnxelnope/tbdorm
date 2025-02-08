@@ -35,16 +35,19 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
     additionalFees: {
       airConditioner: null,
       parking: null,
-      floorRates: {},
+      floorRates: {
+        "1": null,
+        "2": null
+      },
       utilities: {
         water: {
-          perPerson: null,
+          perPerson: null
         },
         electric: {
-          unit: null,
-        },
-      },
-    },
+          unit: null
+        }
+      }
+    }
   });
 
   // แปลง roomTypes object เป็น array
@@ -65,15 +68,18 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
             additionalFees: {
               airConditioner: null,
               parking: null,
-              floorRates: {},
+              floorRates: {
+                "1": null,
+                "2": null
+              },
               utilities: {
                 water: {
-                  perPerson: null,
+                  perPerson: null
                 },
                 electric: {
-                  unit: null,
-                },
-              },
+                  unit: null
+                }
+              }
             },
           });
         }
@@ -226,7 +232,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-2xl font-semibold text-gray-900">
               ตั้งค่าหอพัก
             </h1>
             <p className="mt-1 text-sm text-gray-500">
@@ -248,7 +254,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-white">กำหนดราคา</h2>
+            <h2 className="text-lg font-medium text-gray-900">กำหนดราคา</h2>
             <button
               onClick={handleAddRoomType}
               className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
@@ -314,7 +320,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       {/* ค่าบริการเพิ่มเติม */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-white">
+          <h2 className="text-lg font-medium text-gray-900">
             ค่าบริการเพิ่มเติม
           </h2>
         </div>
@@ -330,7 +336,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                   type="number"
                   min="0"
                   step="any"
-                  value={config.additionalFees.airConditioner ?? ''}
+                  value={config?.additionalFees?.airConditioner ?? ''}
                   onChange={(e) =>
                     setConfig({
                       ...config,
@@ -356,7 +362,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                   type="number"
                   min="0"
                   step="any"
-                  value={config.additionalFees.parking ?? ''}
+                  value={config?.additionalFees?.parking ?? ''}
                   onChange={(e) =>
                     setConfig({
                       ...config,
@@ -386,7 +392,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 <div className="relative">
                   <input
                     type="number"
-                    value={config.additionalFees.floorRates["1"] ?? ''}
+                    value={config?.additionalFees?.floorRates?.["1"] ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
                       setConfig(prev => ({
@@ -414,7 +420,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 <div className="relative">
                   <input
                     type="number"
-                    value={config.additionalFees.floorRates["2"] ?? ''}
+                    value={config?.additionalFees?.floorRates?.["2"] ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
                       setConfig(prev => ({
@@ -442,7 +448,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       {/* ค่าน้ำค่าไฟ */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-white">
+          <h2 className="text-lg font-medium text-gray-900">
             ค่าน้ำค่าไฟ
           </h2>
         </div>
@@ -451,9 +457,9 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* ค่าน้ำ */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-white">ค่าน้ำ</h3>
+              <h3 className="text-sm font-medium text-gray-900">ค่าน้ำ</h3>
               <div className="space-y-2">
-                <label className="block text-sm text-gray-600">
+                <label className="block text-sm text-gray-900">
                   ค่าน้ำแบบเหมาจ่าย (ต่อคน)
                 </label>
                 <div className="relative">
@@ -461,7 +467,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     type="number"
                     min="0"
                     step="any"
-                    value={config.additionalFees.utilities.water.perPerson ?? ''}
+                    value={config?.additionalFees?.utilities?.water?.perPerson ?? ''}
                     onChange={(e) =>
                       setConfig({
                         ...config,
@@ -486,9 +492,9 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
 
             {/* ค่าไฟ */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-white">ค่าไฟ</h3>
+              <h3 className="text-sm font-medium text-gray-900">ค่าไฟ</h3>
               <div className="space-y-2">
-                <label className="block text-sm text-gray-600">
+                <label className="block text-sm text-gray-900">
                   ค่าไฟต่อหน่วย
                 </label>
                 <div className="relative">
@@ -496,7 +502,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     type="number"
                     min="0"
                     step="any"
-                    value={config.additionalFees.utilities.electric.unit ?? ''}
+                    value={config?.additionalFees?.utilities?.electric?.unit ?? ''}
                     onChange={(e) =>
                       setConfig({
                         ...config,

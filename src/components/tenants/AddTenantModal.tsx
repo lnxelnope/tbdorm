@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, Fragment } from "react";
-import { Dialog, Transition } from "@headlessui/react";
-import { X } from "lucide-react";
-import { Dormitory } from "@/types/dormitory";
+import { useState } from 'react'
+import { X } from 'lucide-react'
+import type { Dormitory } from '@/types/dormitory'
 import { toast } from "sonner";
 import { addTenant } from "@/lib/firebase/firebaseUtils";
 
 interface AddTenantModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  dormitories: Dormitory[];
-  onSuccess: () => void;
+  isOpen: boolean
+  onClose: () => void
+  dormitories: Dormitory[]
+  onSuccess: () => void
 }
 
 interface TenantFormData {
@@ -24,7 +23,7 @@ interface TenantFormData {
   dormitoryId: string;
   roomNumber: string;
   startDate: string;
-  deposit: number;
+  deposit: string;
   numberOfResidents: number;
   emergencyContact: {
     name: string;
@@ -34,12 +33,8 @@ interface TenantFormData {
   outstandingBalance: number;
 }
 
-export default function AddTenantModal({
-  isOpen,
-  onClose,
-  dormitories,
-  onSuccess,
-}: AddTenantModalProps) {
+export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess }: AddTenantModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState<TenantFormData>({
     name: "",
     idCard: "",
@@ -47,10 +42,10 @@ export default function AddTenantModal({
     email: "",
     lineId: "",
     currentAddress: "",
-    dormitoryId: "",
+    dormitoryId: dormitories[0]?.id || "",
     roomNumber: "",
     startDate: new Date().toISOString().split("T")[0],
-    deposit: 0,
+    deposit: "",
     numberOfResidents: 1,
     emergencyContact: {
       name: "",
@@ -60,28 +55,25 @@ export default function AddTenantModal({
     outstandingBalance: 0,
   });
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name || !formData.roomNumber || !formData.dormitoryId) {
-      toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
-    }
-
+    e.preventDefault()
+    setIsSubmitting(true)
     try {
-      setIsSubmitting(true);
-      console.log('Submitting form data:', formData);
-      
-      const tenantData = {
+      if (!formData.name || !formData.roomNumber || !formData.dormitoryId) {
+        toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+        return;
+      }
+
+      const submitData = {
         ...formData,
+        deposit: formData.deposit ? Number(formData.deposit) : 0,
         outstandingBalance: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
         status: 'active' as const,
       };
 
-      const result = await addTenant(tenantData);
+      const result = await addTenant(submitData);
       
       if (result.success) {
         toast.success("เพิ่มผู้เช่าเรียบร้อย");
@@ -91,321 +83,284 @@ export default function AddTenantModal({
         toast.error(result.error?.toString() || "เกิดข้อผิดพลาดในการเพิ่มผู้เช่า");
       }
     } catch (error) {
-      console.error("Error adding tenant:", error);
+      console.error('Error adding tenant:', error)
       toast.error("เกิดข้อผิดพลาดในการเพิ่มผู้เช่า");
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
+
+  if (!isOpen) return null
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-[9999]" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
-        </Transition.Child>
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/30" 
+        onClick={onClose}
+        style={{ zIndex: 1000 }}
+      />
+      
+      {/* Modal */}
+      <div 
+        className="fixed inset-0 flex items-center justify-center p-4"
+        style={{ zIndex: 1001 }}
+      >
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+          {/* Header */}
+          <div className="p-6 border-b">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-gray-900">เพิ่มผู้เช่า</h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
 
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white p-6 text-left align-middle shadow-xl transition-all">
-                <div className="flex items-center justify-between border-b border-gray-200 pb-4">
-                  <Dialog.Title className="text-lg font-semibold text-gray-900">
-                    เพิ่มผู้เช่าใหม่
-                  </Dialog.Title>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="text-gray-400 hover:text-gray-500"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+          {/* Content */}
+          <div className="p-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* ฟอร์มข้อมูลผู้เช่า */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ข้อมูลส่วนตัว */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      ชื่อ-นามสกุล <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      เลขบัตรประชาชน <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.idCard}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '').slice(0, 13);
+                        setFormData({ ...formData, idCard: value });
+                      }}
+                      pattern="\d{13}"
+                      maxLength={13}
+                      placeholder="กรุณากรอกเลขบัตรประชาชน 13 หลัก"
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      เบอร์โทรศัพท์ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      อีเมล
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Line ID
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.lineId}
+                      onChange={(e) => setFormData({ ...formData, lineId: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      ที่อยู่ปัจจุบัน
+                    </label>
+                    <textarea
+                      value={formData.currentAddress}
+                      onChange={(e) => setFormData({ ...formData, currentAddress: e.target.value })}
+                      rows={3}
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
                 </div>
 
-                <div className="overflow-y-auto max-h-[calc(100vh-200px)]">
-                  <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                    <div className="grid grid-cols-2 gap-6">
-                      {/* ข้อมูลผู้เช่า */}
-                      <div className="space-y-4">
-                        <h3 className="font-medium text-white">ข้อมูลผู้เช่า</h3>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            ชื่อ-นามสกุล <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.name}
-                            onChange={(e) =>
-                              setFormData({ ...formData, name: e.target.value })
-                            }
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            เลขบัตรประชาชน <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.idCard}
-                            onChange={(e) =>
-                              setFormData({ ...formData, idCard: e.target.value })
-                            }
-                            required
-                            maxLength={13}
-                            pattern="[0-9]{13}"
-                            title="กรุณากรอกเลขบัตรประชาชน 13 หลัก"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            เบอร์โทรศัพท์ <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="tel"
-                            value={formData.phone}
-                            onChange={(e) =>
-                              setFormData({ ...formData, phone: e.target.value })
-                            }
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            Line ID <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.lineId}
-                            onChange={(e) =>
-                              setFormData({ ...formData, lineId: e.target.value })
-                            }
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            อีเมล <span className="text-gray-500">(ไม่จำเป็น)</span>
-                          </label>
-                          <input
-                            type="email"
-                            value={formData.email}
-                            onChange={(e) =>
-                              setFormData({ ...formData, email: e.target.value })
-                            }
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            ที่อยู่ปัจจุบัน <span className="text-gray-500">(ไม่จำเป็น)</span>
-                          </label>
-                          <textarea
-                            value={formData.currentAddress}
-                            onChange={(e) =>
-                              setFormData({ ...formData, currentAddress: e.target.value })
-                            }
-                            rows={3}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                      </div>
+                {/* ข้อมูลการเช่า */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      หอพัก <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.dormitoryId}
+                      onChange={(e) => setFormData({ ...formData, dormitoryId: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    >
+                      <option value="">เลือกหอพัก</option>
+                      {dormitories.map((dorm) => (
+                        <option key={dorm.id} value={dorm.id}>
+                          {dorm.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                      {/* ข้อมูลการเช่า */}
-                      <div className="space-y-4">
-                        <h3 className="font-medium text-white">ข้อมูลการเช่า</h3>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            หอพัก <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={formData.dormitoryId}
-                            onChange={(e) =>
-                              setFormData({ ...formData, dormitoryId: e.target.value })
-                            }
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          >
-                            <option value="">เลือกหอพัก</option>
-                            {dormitories.map((dorm) => (
-                              <option key={dorm.id} value={dorm.id}>
-                                {dorm.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            เลขห้อง <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.roomNumber}
-                            onChange={(e) =>
-                              setFormData({ ...formData, roomNumber: e.target.value })
-                            }
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            วันที่เข้าพัก <span className="text-gray-500">(ไม่จำเป็น)</span>
-                          </label>
-                          <input
-                            type="date"
-                            value={formData.startDate}
-                            onChange={(e) =>
-                              setFormData({ ...formData, startDate: e.target.value })
-                            }
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            เงินประกัน <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            value={formData.deposit}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                deposit: parseInt(e.target.value) || 0,
-                              })
-                            }
-                            required
-                            min="0"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            จำนวนผู้พักอาศัย <span className="text-gray-500">(ไม่จำเป็น)</span>
-                          </label>
-                          <input
-                            type="number"
-                            value={formData.numberOfResidents}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                numberOfResidents: parseInt(e.target.value) || 1,
-                              })
-                            }
-                            min="1"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      เลขห้อง <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.roomNumber}
+                      onChange={(e) => setFormData({ ...formData, roomNumber: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
 
-                    {/* ผู้ติดต่อฉุกเฉิน */}
-                    <div className="space-y-4">
-                      <h3 className="font-medium text-white">ผู้ติดต่อฉุกเฉิน <span className="text-gray-500">(ไม่จำเป็น)</span></h3>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            ชื่อ-นามสกุล
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.emergencyContact.name}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContact: {
-                                  ...formData.emergencyContact,
-                                  name: e.target.value,
-                                },
-                              })
-                            }
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            ความสัมพันธ์
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.emergencyContact.relationship}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContact: {
-                                  ...formData.emergencyContact,
-                                  relationship: e.target.value,
-                                },
-                              })
-                            }
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            เบอร์โทรศัพท์
-                          </label>
-                          <input
-                            type="tel"
-                            value={formData.emergencyContact.phone}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContact: {
-                                  ...formData.emergencyContact,
-                                  phone: e.target.value,
-                                },
-                              })
-                            }
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      วันที่เข้าพัก <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.startDate}
+                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
 
-                    <div className="flex justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={onClose}
-                        className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                      >
-                        ยกเลิก
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-                      >
-                        {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
-                      </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      เงินประกัน <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.deposit}
+                      onChange={(e) => setFormData({ ...formData, deposit: e.target.value })}
+                      placeholder="กรุณากรอกจำนวนเงินประกัน"
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      จำนวนผู้พักอาศัย <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.numberOfResidents}
+                      onChange={(e) => setFormData({ ...formData, numberOfResidents: Number(e.target.value) })}
+                      required
+                      min="1"
+                      className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+
+                  {/* ผู้ติดต่อฉุกเฉิน */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      ผู้ติดต่อฉุกเฉิน
+                    </label>
+                    <div className="mt-1 space-y-4">
+                      <input
+                        type="text"
+                        value={formData.emergencyContact.name}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            emergencyContact: {
+                              ...formData.emergencyContact,
+                              name: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="ชื่อ-นามสกุล"
+                        className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                      <input
+                        type="text"
+                        value={formData.emergencyContact.relationship}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            emergencyContact: {
+                              ...formData.emergencyContact,
+                              relationship: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="ความสัมพันธ์"
+                        className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                      <input
+                        type="tel"
+                        value={formData.emergencyContact.phone}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            emergencyContact: {
+                              ...formData.emergencyContact,
+                              phone: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="เบอร์โทรศัพท์"
+                        className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
                     </div>
-                  </form>
+                  </div>
                 </div>
-              </Dialog.Panel>
-            </Transition.Child>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </Dialog>
-    </Transition>
-  );
+      </div>
+    </>
+  )
 } 

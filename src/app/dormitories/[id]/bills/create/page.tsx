@@ -185,7 +185,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             กลับ
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold text-white">สร้างบิลใหม่</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">สร้างบิลใหม่</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -272,7 +272,7 @@ const handleSubmit = async (e: React.FormEvent) => {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-white">รายการ</h3>
+                <h3 className="text-lg font-medium text-gray-900">รายการ</h3>
                 <button
                   type="button"
                   onClick={addItem}
@@ -319,7 +319,7 @@ const handleSubmit = async (e: React.FormEvent) => {
               ))}
 
               <div className="text-right">
-                <p className="text-lg font-medium text-white">
+                <p className="text-lg font-medium text-gray-900">
                   รวมทั้งสิ้น:{" "}
                   {formData.items
                     .reduce((sum, item) => sum + item.amount, 0)

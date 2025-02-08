@@ -1,7 +1,7 @@
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
-import { getFirestore, Firestore, connectFirestoreEmulator } from "firebase/firestore";
-import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
-import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
+import { getFirestore, Firestore } from "firebase/firestore";
+import { getAuth, Auth } from "firebase/auth";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
@@ -37,15 +37,7 @@ if (typeof window !== 'undefined') {
     db = getFirestore(app);
     storage = getStorage(app);
 
-    // ตรวจสอบว่าเป็น development environment หรือไม่
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Running in development mode');
-      // connectAuthEmulator(auth, 'http://localhost:9099');
-      // connectFirestoreEmulator(db, 'localhost', 8080);
-      // connectStorageEmulator(storage, 'localhost', 9199);
-    }
-
-    // Initialize Analytics only on client side
+    // Initialize Analytics only in production
     if (process.env.NODE_ENV === 'production') {
       isSupported().then(yes => yes && (analytics = getAnalytics(app)));
     }

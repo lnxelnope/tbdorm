@@ -152,7 +152,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600"></div>
       </div>
     );
   }
@@ -177,7 +177,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="px-4 py-2 text-sm font-medium text-gray-900 bg-white rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 border border-gray-200"
         >
           เพิ่มรูปแบบห้อง
         </button>
@@ -193,7 +193,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                   <h3 className="text-lg font-medium text-gray-900">
                     {type.name}
                     {type.isDefault && (
-                      <span className="ml-2 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-100 rounded-full">
+                      <span className="ml-2 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
                         ค่าเริ่มต้น
                       </span>
                     )}
@@ -206,7 +206,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => handleEdit(type)}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-500"
+                    className="text-sm font-medium text-gray-600 hover:text-gray-500"
                   >
                     แก้ไข
                   </button>
@@ -242,7 +242,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-200 focus:ring-gray-200 sm:text-sm"
                     required
                   />
                 </div>
@@ -261,7 +261,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                         basePrice: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-200 focus:ring-gray-200 sm:text-sm"
                     required
                   />
                 </div>
@@ -276,7 +276,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                       setFormData({ ...formData, description: e.target.value })
                     }
                     rows={3}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-200 focus:ring-gray-200 sm:text-sm"
                   />
                 </div>
 
@@ -287,7 +287,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                     onChange={(e) =>
                       setFormData({ ...formData, isDefault: e.target.checked })
                     }
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300 rounded"
                   />
                   <label className="ml-2 block text-sm text-gray-900">
                     ตั้งเป็นค่าเริ่มต้น
@@ -309,7 +309,7 @@ export default function SettingsPage({ params }: { params: { id: string } }) {
                         parkingFee: 0,
                       });
                     }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200"
                   >
                     ยกเลิก
                   </button>

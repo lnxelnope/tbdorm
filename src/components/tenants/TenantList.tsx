@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Dormitory, Tenant } from "@/types/dormitory";
 import EditTenantModal from "./EditTenantModal";
 import { toast } from "sonner";
-import { ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { ChevronUp, ChevronDown, Loader2, Plus } from "lucide-react";
 import { deleteTenant, deleteMultipleTenants, queryTenants } from "@/lib/firebase/firebaseUtils";
 import Link from "next/link";
 import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
@@ -16,6 +16,7 @@ interface TenantListProps {
   selectedDormitory: string;
   searchQuery: string;
   statusFilter: string;
+  onAddClick: () => void;
 }
 
 type SortField = 'name' | 'dormitory' | 'roomNumber' | 'startDate' | 'deposit' | 'numberOfResidents' | 'rent';
@@ -26,6 +27,7 @@ export default function TenantList({
   selectedDormitory,
   searchQuery,
   statusFilter,
+  onAddClick,
 }: TenantListProps) {
   const [tenants, setTenants] = useState(initialTenants);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
@@ -224,168 +226,154 @@ export default function TenantList({
           <CardTitle>รายชื่อผู้เช่า</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <table className="w-full">
-              <thead className="bg-muted/50">
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedTenants.length === filteredTenants.length}
+                onChange={handleSelectAll}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-500">
+                เลือกทั้งหมด ({selectedTenants.length}/{filteredTenants.length})
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedTenants.length > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  className="text-sm text-red-600 hover:text-red-700"
+                >
+                  ลบที่เลือก
+                </button>
+              )}
+              <button
+                onClick={onAddClick}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                เพิ่มผู้เช่า
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
                 <tr>
-                  <th scope="col" className="p-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedTenants.length === filteredTenants.length && filteredTenants.length > 0}
-                      onChange={handleSelectAll}
-                      className="h-4 w-4 rounded border-input bg-background"
-                    />
+                  <th className="w-12 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <span className="sr-only">Select</span>
                   </th>
-                  <th 
-                    scope="col" 
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                  <th
                     onClick={() => handleSort('name')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    <div className="flex items-center gap-1">
-                      ชื่อ-นามสกุล
-                      <SortIcon field="name" />
-                    </div>
+                    ชื่อ-นามสกุล
+                    <SortIcon field="name" />
                   </th>
                   <th
-                    scope="col"
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                     onClick={() => handleSort('dormitory')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    <div className="flex items-center gap-1">
-                      หอพัก
-                      <SortIcon field="dormitory" />
-                    </div>
+                    หอพัก
+                    <SortIcon field="dormitory" />
                   </th>
                   <th
-                    scope="col"
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                     onClick={() => handleSort('roomNumber')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    <div className="flex items-center gap-1">
-                      ห้อง
-                      <SortIcon field="roomNumber" />
-                    </div>
-                  </th>
-                  <th scope="col" className="p-3 text-left text-sm font-medium text-muted-foreground">
-                    Line ID
+                    เลขห้อง
+                    <SortIcon field="roomNumber" />
                   </th>
                   <th
-                    scope="col"
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort('startDate')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                  >
+                    วันที่เข้าพัก
+                    <SortIcon field="startDate" />
+                  </th>
+                  <th
                     onClick={() => handleSort('deposit')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    <div className="flex items-center gap-1">
-                      เงินประกัน
-                      <SortIcon field="deposit" />
-                    </div>
+                    เงินประกัน
+                    <SortIcon field="deposit" />
                   </th>
                   <th
-                    scope="col"
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort('numberOfResidents')}
-                  >
-                    <div className="flex items-center gap-1">
-                      จำนวนผู้พัก
-                      <SortIcon field="numberOfResidents" />
-                    </div>
-                  </th>
-                  <th
-                    scope="col"
-                    className="p-3 text-left text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                     onClick={() => handleSort('rent')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    <div className="flex items-center gap-1">
-                      ค่าเช่า/เดือน
-                      <SortIcon field="rent" />
-                    </div>
+                    ค่าเช่า/เดือน
+                    <SortIcon field="rent" />
                   </th>
-                  <th scope="col" className="relative p-3">
-                    <span className="sr-only">Actions</span>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    จัดการ
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="bg-white divide-y divide-gray-200">
                 {filteredTenants.map((tenant) => {
                   const dormitory = dormitories.find(
                     (d) => d.id === tenant.dormitoryId
                   );
+                  const rent = calculateRent(tenant, dormitory);
+
                   return (
-                    <tr 
-                      key={tenant.id}
-                      className="bg-background hover:bg-muted/50 transition-colors"
-                    >
-                      <td className="p-3">
+                    <tr key={tenant.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <input
                           type="checkbox"
                           checked={selectedTenants.includes(tenant.id)}
                           onChange={() => handleSelectTenant(tenant.id)}
-                          className="h-4 w-4 rounded border-input bg-background"
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <Link 
-                            href={`/tenants/${tenant.id}`}
-                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
-                          >
-                            {tenant.name}
-                          </Link>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{tenant.name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {dormitory?.name || "-"}
                         </div>
                       </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
                           <Link 
-                            href={`/dormitories/${tenant.dormitoryId}`}
-                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
-                          >
-                            {dormitories.find((d) => d.id === tenant.dormitoryId)?.name}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <Link 
-                            href={`/dormitories/${tenant.dormitoryId}/rooms?search=${tenant.roomNumber}`}
-                            className="text-sm font-medium leading-none text-muted-foreground hover:text-foreground"
+                            href={`/dormitories/${tenant.dormitoryId}/rooms/${tenant.roomNumber}`}
+                            className="text-blue-600 hover:text-blue-800 hover:underline"
                           >
                             {tenant.roomNumber}
                           </Link>
                         </div>
                       </td>
-                      <td className="p-3">
-                        {tenant.lineId}
-                      </td>
-                      <td className="p-3">
-                        {tenant.deposit.toLocaleString("th-TH")} บาท
-                      </td>
-                      <td className="p-3">
-                        {tenant.numberOfResidents} คน
-                      </td>
-                      <td className="p-3">
-                        {calculateRent(tenant, dormitory).toLocaleString("th-TH")} บาท
-                      </td>
-                      <td className="p-3">
-                        <div className="flex flex-col">
-                          <span>{tenant.email || "-"}</span>
-                          <span className="text-sm text-gray-500">{tenant.phone}</span>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {new Date(tenant.startDate).toLocaleDateString("th-TH")}
                         </div>
                       </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedTenant(tenant)}
-                            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 px-3"
-                          >
-                            แก้ไข
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTenant(tenant.id)}
-                            disabled={isDeleting}
-                            className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 h-8 px-3 disabled:opacity-50"
-                          >
-                            ลบ
-                          </button>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {tenant.deposit.toLocaleString()} บาท
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {rent.toLocaleString()} บาท
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => setSelectedTenant(tenant)}
+                          className="text-blue-600 hover:text-blue-900 mr-4"
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTenant(tenant.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          ลบ
+                        </button>
                       </td>
                     </tr>
                   );

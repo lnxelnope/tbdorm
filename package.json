@@ -7,14 +7,15 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
-    "dev": "npx --yes next dev",
-    "build": "npx --yes next build",
-    "start": "npx --yes next start",
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.18.0",
     "@deepgram/sdk": "^3.10.0",
+    "@google/generative-ai": "^0.21.0",
     "@headlessui/react": "^1.7.17",
     "@hookform/resolvers": "^3.3.2",
     "@radix-ui/react-alert-dialog": "^1.0.5",

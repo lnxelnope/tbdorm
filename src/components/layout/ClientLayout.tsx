@@ -13,11 +13,11 @@ export default function ClientLayout({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-gray-50">
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-slate-800 text-white md:hidden"
+        className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-white text-gray-700 shadow-sm border border-gray-100 md:hidden"
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -35,7 +35,7 @@ export default function ClientLayout({
 
         {/* Main Content */}
         <main className={cn(
-          "flex-1 transition-all duration-300",
+          "flex-1 transition-all duration-300 p-6",
           isSidebarOpen ? "md:ml-64" : "md:ml-16"
         )}>
           {children}

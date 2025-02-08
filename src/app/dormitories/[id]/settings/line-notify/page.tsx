@@ -84,7 +84,7 @@ export default function LineNotifySettingsPage({
             กลับ
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold text-white">ตั้งค่า LINE Notify</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">ตั้งค่า LINE Notify</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -131,7 +131,7 @@ export default function LineNotifySettingsPage({
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-white">การแจ้งเตือน</h3>
+              <h3 className="text-sm font-medium text-gray-900">การแจ้งเตือน</h3>
               <div className="space-y-2">
                 <label className="flex items-center">
                   <input

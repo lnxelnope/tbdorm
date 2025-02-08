@@ -373,7 +373,7 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
             กลับ
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold text-white">แก้ไขข้อมูลหอพัก</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">แก้ไขข้อมูลหอพัก</h1>
         <p className="mt-1 text-sm text-gray-500">
           แก้ไขรายละเอียดข้อมูลหอพัก
         </p>
@@ -446,9 +446,30 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
                   <textarea
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    rows={2}
+                    rows={3}
                     className="w-full border-0 p-0 focus:ring-0 sm:text-sm bg-transparent placeholder-gray-400"
                     placeholder="กรุณากรอกที่อยู่หอพัก"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    จำนวนชั้น <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.totalFloors}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 1;
+                      setFormData({ 
+                        ...formData, 
+                        totalFloors: value,
+                        floors: value // อัพเดท floors ด้วยเพื่อให้ข้อมูลตรงกัน
+                      });
+                    }}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    required
                   />
                 </div>
               </div>
@@ -495,46 +516,6 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
             <div className="p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-6">ข้อมูลอาคาร</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    จำนวนชั้น
-                  </label>
-                  <div className="mt-2 space-x-4">
-                    <label className="inline-flex items-center">
-                      <input
-                        type="radio"
-                        value={1}
-                        checked={formData.totalFloors === 1}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            totalFloors: parseInt(e.target.value),
-                            floors: parseInt(e.target.value),
-                          })
-                        }
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                      />
-                      <span className="ml-2 text-sm text-gray-600">1 ชั้น</span>
-                    </label>
-                    <label className="inline-flex items-center">
-                      <input
-                        type="radio"
-                        value={2}
-                        checked={formData.totalFloors === 2}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            totalFloors: parseInt(e.target.value),
-                            floors: parseInt(e.target.value),
-                          })
-                        }
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                      />
-                      <span className="ml-2 text-sm text-gray-600">2 ชั้น</span>
-                    </label>
-                  </div>
-                </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     สถานะหอพัก

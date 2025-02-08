@@ -98,7 +98,7 @@ export default function FraudDetectionPage() {
         <Link href="/" className="text-gray-500 hover:text-gray-700 mr-4">
           <ArrowLeft className="w-6 h-6" />
         </Link>
-        <h1 className="text-2xl font-semibold text-white">
+        <h1 className="text-2xl font-semibold text-gray-900">
           ระบบตรวจจับการใช้ไฟผิดปกติ
         </h1>
       </div>
@@ -137,7 +137,7 @@ export default function FraudDetectionPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-sm font-medium text-gray-500">การแจ้งเตือนทั้งหมด</h3>
-              <p className="mt-2 text-3xl font-semibold text-white">{alerts.length}</p>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">{alerts.length}</p>
             </div>
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-sm font-medium text-gray-500">ห้องว่างใช้ไฟผิดปกติ</h3>
@@ -156,7 +156,7 @@ export default function FraudDetectionPage() {
           {/* รายการแจ้งเตือน */}
           <div className="bg-white shadow rounded-lg overflow-hidden">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-white">รายการแจ้งเตือน</h2>
+              <h2 className="text-lg font-medium text-gray-900">รายการแจ้งเตือน</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -194,7 +194,7 @@ export default function FraudDetectionPage() {
                       const room = rooms.find(r => r.id === alert.roomId);
                       return (
                         <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             ห้อง {room?.number}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -206,10 +206,10 @@ export default function FraudDetectionPage() {
                               {alert.type === 'vacant' ? 'ห้องว่างใช้ไฟผิดปกติ' : 'ใช้ไฟสูงผิดปกติ'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {alert.units.toFixed(2)} หน่วย
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {alert.date.toLocaleDateString('th-TH')}
                           </td>
                         </tr>

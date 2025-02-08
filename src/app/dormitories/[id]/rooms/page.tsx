@@ -14,6 +14,7 @@ import { db } from "@/lib/firebase/firebaseConfig";
 import { deleteRoom } from "@/lib/firebase/firebaseUtils";
 import { calculateTotalPrice } from "./utils";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 interface DormitoryConfig {
   additionalFees: {
@@ -81,6 +82,14 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [dormitoryResult, setDormitoryResult] = useState<{
+    success: boolean;
+    data?: {
+      name: string;
+      totalFloors: number;
+      config?: any;
+    };
+  } | null>(null);
 
   const router = useRouter();
 
@@ -157,17 +166,13 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [
-          roomsResult,
-          roomTypesResult,
-          dormitoryResult,
-          tenantsResult
-        ] = await Promise.all([
-          getRooms(dormId),
-          getRoomTypes(dormId),
-          getDormitory(dormId),
-          queryTenants(dormId)
-        ]);
+        const [roomsResult, roomTypesResult, dormResult, tenantsResult] =
+          await Promise.all([
+            getRooms(dormId),
+            getRoomTypes(dormId),
+            getDormitory(dormId),
+            queryTenants(dormId),
+          ]);
 
         if (roomsResult.success && roomsResult.data) {
           setRooms(roomsResult.data);
@@ -177,22 +182,23 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           setRoomTypes(roomTypesResult.data);
         }
 
-        if (dormitoryResult.success && dormitoryResult.data) {
-          setDormitoryName(dormitoryResult.data.name);
+        if (dormResult.success && dormResult.data) {
+          setDormitoryResult(dormResult);
+          setDormitoryName(dormResult.data.name);
           setDormitoryConfig({
             additionalFees: {
-              airConditioner: dormitoryResult.data.config?.additionalFees?.airConditioner ?? null,
-              parking: dormitoryResult.data.config?.additionalFees?.parking ?? null,
-              floorRates: dormitoryResult.data.config?.additionalFees?.floorRates || {},
+              airConditioner: dormResult.data.config?.additionalFees?.airConditioner ?? null,
+              parking: dormResult.data.config?.additionalFees?.parking ?? null,
+              floorRates: dormResult.data.config?.additionalFees?.floorRates || {},
               utilities: {
                 water: {
-                  perPerson: dormitoryResult.data.config?.additionalFees?.utilities?.water?.perPerson ?? null
+                  perPerson: dormResult.data.config?.additionalFees?.utilities?.water?.perPerson ?? null,
                 },
                 electric: {
-                  unit: dormitoryResult.data.config?.additionalFees?.utilities?.electric?.unit ?? null
-                }
-              }
-            }
+                  unit: dormResult.data.config?.additionalFees?.utilities?.electric?.unit ?? null,
+                },
+              },
+            },
           });
         }
 
@@ -201,7 +207,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         }
       } catch (error) {
         console.error("Error fetching data:", error);
-        toast.error("ไม่สามารถโหลดข้อมูลได้");
+        toast.error("เกิดข้อผิดพลาดในการดึงข้อมูล");
       } finally {
         setIsLoading(false);
       }
@@ -319,7 +325,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600"></div>
       </div>
     );
   }
@@ -338,7 +344,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             </Link>
           </div>
           <div className="bg-white rounded-lg p-8 text-center max-w-lg mx-auto">
-            <h3 className="text-lg font-medium text-white mb-2">ยังไม่มีรูปแบบห้องพัก</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีรูปแบบห้องพัก</h3>
             <p className="text-sm text-gray-500 mb-6">
               คุณจำเป็นต้องเพิ่มรูปแบบห้องพักอย่างน้อย 1 รูปแบบก่อนที่จะสามารถเพิ่มห้องพักได้
             </p>
@@ -365,15 +371,15 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             <ArrowLeft className="w-6 h-6" />
           </Link>
           <div>
-            <h1 className="text-2xl font-semibold text-white">จัดการห้องพัก</h1>
-            {dormitoryName && (
-              <p className="text-sm text-gray-500">{dormitoryName}</p>
+            <h1 className="text-2xl font-semibold text-gray-900">จัดการห้องพัก</h1>
+            {dormitoryResult?.data?.name && (
+              <p className="text-sm text-gray-500">{dormitoryResult.data.name}</p>
             )}
           </div>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex items-center px-4 py-2 border border-gray-200 text-sm font-medium rounded-md shadow-sm text-gray-900 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200"
         >
           <Plus className="w-4 h-4 mr-2" />
           เพิ่มห้องพัก
@@ -391,7 +397,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="ค้นหาห้องพัก..."
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-400 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-gray-200 focus:border-gray-200 sm:text-sm"
           />
         </div>
         <div className="flex items-center space-x-4">
@@ -406,7 +412,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                 onChange={(e) =>
                   setFilters({ ...filters, floor: e.target.value })
                 }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300"
               />
               <label htmlFor="allFloors" className="ml-2 block text-sm text-gray-700">
                 ทุกชั้น
@@ -422,7 +428,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                 onChange={(e) =>
                   setFilters({ ...filters, floor: e.target.value })
                 }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300"
               />
               <label htmlFor="floor1" className="ml-2 block text-sm text-gray-700">
                 ชั้น 1
@@ -438,7 +444,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                 onChange={(e) =>
                   setFilters({ ...filters, floor: e.target.value })
                 }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300"
               />
               <label htmlFor="floor2" className="ml-2 block text-sm text-gray-700">
                 ชั้น 2
@@ -450,7 +456,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             onChange={(e) =>
               setFilters({ ...filters, status: e.target.value })
             }
-            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-gray-200 focus:border-gray-200 sm:text-sm rounded-md"
           >
             <option value="">ทุกสถานะ</option>
             <option value="available">ว่าง</option>
@@ -462,7 +468,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             onChange={(e) =>
               setFilters({ ...filters, roomType: e.target.value })
             }
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-200 focus:ring-gray-200 sm:text-sm"
           >
             <option value="">ทุกรูปแบบ</option>
             {Array.isArray(roomTypes) && roomTypes.map((type) => (
@@ -502,7 +508,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       type="checkbox"
                       checked={selectedRooms.length === sortedAndFilteredRooms.length}
                       onChange={(e) => handleSelectAll(e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300 rounded"
                     />
                   </div>
                 </th>
@@ -581,31 +587,31 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                         type="checkbox"
                         checked={selectedRooms.includes(room.id)}
                         onChange={(e) => handleSelectRoom(room.id, e.target.checked)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        className="h-4 w-4 text-gray-600 focus:ring-gray-200 border-gray-300 rounded"
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Link 
                         href={`/dormitories/${dormId}/rooms/${room.number}`}
-                        className="text-sm font-medium text-blue-600 hover:text-blue-900"
+                        className="text-sm font-medium text-gray-900 hover:text-gray-900"
                       >
                         ห้อง {room.number}
                       </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">ชั้น {room.floor}</div>
+                      <div className="text-sm text-gray-900">ชั้น {room.floor}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">{roomType?.name}</div>
+                      <div className="text-sm text-gray-900">{roomType?.name}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-white">
+                      <div className="text-sm font-medium text-gray-900">
                         ฿{calculateTotalPrice(room, roomTypes, dormitoryConfig).toLocaleString()}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm space-y-1">
-                        <div className="text-white">
+                        <div className="text-gray-900">
                           <span className="font-medium">ค่าห้อง:</span> ฿{roomType?.basePrice.toLocaleString()}
                         </div>
                         {dormitoryConfig.additionalFees.floorRates[room.floor.toString()] && (
@@ -635,7 +641,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       <div className="flex gap-2">
                         {room.hasAirConditioner && (
                           <span className="inline-flex items-center">
-                            <svg className="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
                             แอร์
@@ -643,7 +649,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                         )}
                         {room.hasParking && (
                           <span className="inline-flex items-center">
-                            <svg className="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                             </svg>
                             ที่จอดรถ
@@ -655,7 +661,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       {room.status === 'occupied' && currentTenant ? (
                         <Link 
                           href={`/tenants?search=${currentTenant.name}`}
-                          className="text-blue-600 hover:text-blue-900 hover:underline"
+                          className="text-gray-900 hover:text-gray-900 hover:underline"
                         >
                           {currentTenant.name}
                         </Link>
@@ -666,7 +672,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         onClick={() => setSelectedRoom(room)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
+                        className="text-gray-900 hover:text-gray-900 mr-4"
                       >
                         แก้ไข
                       </button>
@@ -693,6 +699,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           dormitoryId={dormId}
           roomTypes={roomTypes}
           onSuccess={handleAddRoom}
+          totalFloors={dormitoryResult?.data?.totalFloors || 1}
         />
       )}
 
@@ -703,6 +710,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           onClose={() => setSelectedRoom(null)}
           onSuccess={handleEditRoom}
           dormitoryId={dormId}
+          totalFloors={dormitoryResult?.data?.totalFloors || 1}
         />
       )}
     </div>
