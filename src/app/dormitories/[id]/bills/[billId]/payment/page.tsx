@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Bill, Payment } from "@/types/dormitory";
@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { sendPaymentReceivedNotification } from "@/lib/notifications/lineNotify";
+import Image from 'next/image';
 
 export default function PaymentPage({
   params,
@@ -33,11 +34,7 @@ export default function PaymentPage({
     paidAt: new Date().toISOString().split("T")[0],
   });
 
-  useEffect(() => {
-    loadBillDetails();
-  }, [params.id, params.billId]);
-
-  const loadBillDetails = async () => {
+  const loadBillDetails = useCallback(async () => {
     try {
       setIsLoading(true);
       const [billsResult, promptPayResult] = await Promise.all([
@@ -65,7 +62,11 @@ export default function PaymentPage({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id, params.billId]);
+
+  useEffect(() => {
+    loadBillDetails();
+  }, [loadBillDetails]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,10 +335,12 @@ export default function PaymentPage({
                   <div>
                     <dt className="text-sm font-medium text-gray-500">QR Code</dt>
                     <dd className="mt-1">
-                      <img
+                      <Image
                         src={promptPayConfig.qrCode}
                         alt="PromptPay QR Code"
-                        className="w-48 h-48"
+                        width={192}
+                        height={192}
+                        className="rounded-lg shadow-md"
                       />
                     </dd>
                   </div>

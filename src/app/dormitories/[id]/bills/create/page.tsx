@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { Bill, Room, Tenant } from "@/types/dormitory";
+import { Bill, Room, Tenant, RoomType } from "@/types/dormitory";
 import { toast } from "sonner";
 import {
   getBills,
@@ -14,6 +14,7 @@ import {
   createBill,
   getRooms,
   queryTenants,
+  getRoomTypes,
 } from "@/lib/firebase/firebaseUtils";
 import { sendBillCreatedNotification } from "@/lib/notifications/lineNotify";
 
@@ -37,6 +38,7 @@ export default function CreateBillPage({
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<string>("");
   const [formData, setFormData] = useState<FormData>({
@@ -52,30 +54,37 @@ export default function CreateBillPage({
       }
     ],
   });
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    loadInitialData();
-  }, [params.id]);
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
-      const [roomsResult, tenantsResult] = await Promise.all([
+      setIsLoading(true);
+      const [roomsResult, roomTypesResult, tenantsResult] = await Promise.all([
         getRooms(params.id),
+        getRoomTypes(params.id),
         queryTenants(params.id),
       ]);
 
       if (roomsResult.success && roomsResult.data) {
         setRooms(roomsResult.data);
       }
-
+      if (roomTypesResult.success && roomTypesResult.data) {
+        setRoomTypes(roomTypesResult.data);
+      }
       if (tenantsResult.success && tenantsResult.data) {
         setTenants(tenantsResult.data);
       }
     } catch (error) {
       console.error("Error loading initial data:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();

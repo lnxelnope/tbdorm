@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Filter, Search, FileText } from "lucide-react";
 import { Room, UtilityReading } from "@/types/dormitory";
 import {
@@ -24,11 +24,7 @@ export default function UtilitiesPage({ params }: { params: { id: string } }) {
   });
   const [searchTerm, setSearchTerm] = useState("");
 
-  useEffect(() => {
-    loadInitialData();
-  }, [params.id]);
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [roomsResult, readingsResult] = await Promise.all([
@@ -48,7 +44,11 @@ export default function UtilitiesPage({ params }: { params: { id: string } }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

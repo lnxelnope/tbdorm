@@ -6,6 +6,7 @@ import { Building2, Plus, Settings, Edit, Trash2, Home, Layers } from "lucide-re
 import { toast } from "sonner";
 import { getDormitory, queryDormitories, deleteDormitory } from "@/lib/firebase/firebaseUtils";
 import { Dormitory, RoomType } from "@/types/dormitory";
+import Image from 'next/image';
 
 export default function DormitoriesPage() {
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
@@ -91,14 +92,12 @@ export default function DormitoriesPage() {
             className="bg-white overflow-hidden shadow rounded-lg border"
           >
             <div className="relative h-48">
-              <img
-                src={dormitory.images[0] || "/images/placeholder-dormitory.jpg"}
+              <Image 
+                src={dormitory.images[0] || '/placeholder-dorm.jpg'}
                 alt={dormitory.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = "https://placehold.co/600x400?text=No+Image";
-                }}
+                width={400}
+                height={300}
+                className="w-full h-48 object-cover rounded-t-lg"
               />
               <div className="absolute top-2 right-2">
                 <span

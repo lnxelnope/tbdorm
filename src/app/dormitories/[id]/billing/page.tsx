@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Plus, Filter, Search, FileText } from "lucide-react";
 import Link from "next/link";
 import { Bill, Dormitory } from "@/types/dormitory";
 import { getBills, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebaseConfig";
 
 export default function BillingPage({ params }: { params: { id: string } }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -18,45 +20,56 @@ export default function BillingPage({ params }: { params: { id: string } }) {
   });
   const [searchTerm, setSearchTerm] = useState("");
 
-  useEffect(() => {
-    loadInitialData();
+  const loadInitialData = useCallback(async () => {
+    try {
+      const dormitoryRef = doc(db, 'dormitories', params.id);
+      const dormitorySnap = await getDoc(dormitoryRef);
+      if (dormitorySnap.exists()) {
+        setDormitory(dormitorySnap.data() as Dormitory);
+      }
+    } catch (error) {
+      console.error('Error loading dormitory:', error);
+      toast.error('Failed to load dormitory data');
+    }
   }, [params.id]);
 
-  useEffect(() => {
-    loadBills();
-  }, [params.id, filters]);
-
-  const loadInitialData = async () => {
-    try {
-      const dormitoryResult = await getDormitory(params.id);
-      if (dormitoryResult.success && dormitoryResult.data) {
-        setDormitory(dormitoryResult.data);
-      }
-    } catch (error) {
-      console.error("Error loading dormitory:", error);
-      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลหอพัก");
-    }
-  };
-
-  const loadBills = async () => {
+  const loadBills = useCallback(async () => {
     try {
       setIsLoading(true);
-      const result = await getBills(params.id, {
-        status: filters.status as Bill["status"] || undefined,
-        month: filters.month,
-        year: filters.year,
-      });
-
-      if (result.success && result.data) {
-        setBills(result.data);
+      const billsRef = collection(db, 'dormitories', params.id, 'bills');
+      let q = query(billsRef);
+      
+      if (filters.status) {
+        q = query(q, where('status', '==', filters.status));
       }
+      if (filters.month) {
+        q = query(q, where('month', '==', filters.month));
+      }
+      if (filters.year) {
+        q = query(q, where('year', '==', filters.year));
+      }
+      
+      const querySnapshot = await getDocs(q);
+      const bills = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Bill[];
+      setBills(bills);
     } catch (error) {
-      console.error("Error loading bills:", error);
-      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+      console.error('Error loading bills:', error);
+      toast.error('Failed to load bills');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id, filters]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  useEffect(() => {
+    loadBills();
+  }, [loadBills]);
 
   const filteredBills = bills.filter((bill) => {
     if (!searchTerm) return true;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Search } from "lucide-react";
 import { Room, UtilityReading } from "@/types/dormitory";
 import { getRooms, getUtilityReadings } from "@/lib/firebase/firebaseUtils";
@@ -19,31 +19,24 @@ export default function UtilityHistoryPage({
   const [selectedType, setSelectedType] = useState<"water" | "electric">("water");
   const [searchTerm, setSearchTerm] = useState("");
 
-  useEffect(() => {
-    loadInitialData();
-  }, [params.id]);
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [roomsResult, readingsResult] = await Promise.all([
-        getRooms(params.id),
-        getUtilityReadings(params.id),
-      ]);
-
-      if (roomsResult.success && roomsResult.data) {
-        setRooms(roomsResult.data);
-      }
-      if (readingsResult.success && readingsResult.data) {
-        setReadings(readingsResult.data);
+      const result = await getUtilityReadings(params.id);
+      if (result.success && result.data) {
+        setReadings(result.data);
       }
     } catch (error) {
-      console.error("Error loading initial data:", error);
+      console.error("Error loading utility readings:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
   const filteredRooms = rooms.filter((room) => {
     if (!searchTerm) return true;

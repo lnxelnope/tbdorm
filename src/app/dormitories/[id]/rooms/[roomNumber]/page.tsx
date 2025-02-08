@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Edit } from "lucide-react";
 import Link from "next/link";
 import { getRooms, getRoomTypes, getDormitory, queryTenants, updateRoom } from "@/lib/firebase/firebaseUtils";
@@ -271,70 +271,68 @@ export default function RoomDetailsPage() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-    const loadData = async () => {
-      try {
+  const loadData = useCallback(async () => {
+    try {
       setIsLoading(true);
-        const [roomsResult, roomTypesResult, dormitoryResult, tenantsResult] = await Promise.all([
+      const [roomResult, roomTypesResult, dormitoryResult, tenantsResult] = await Promise.all([
         getRooms(dormId),
         getRoomTypes(dormId),
         getDormitory(dormId),
         queryTenants(dormId)
-        ]);
+      ]);
 
-        if (roomsResult.success && roomsResult.data) {
-        const foundRoom = roomsResult.data.find(r => r.number === roomNumber);
-          if (foundRoom) {
-            setRoom(foundRoom);
-          }
+      if (roomResult.success && roomResult.data) {
+        const foundRoom = roomResult.data.find(r => r.number === roomNumber);
+        if (foundRoom) {
+          setRoom(foundRoom);
         }
+      }
 
-        if (roomTypesResult.success && roomTypesResult.data) {
+      if (roomTypesResult.success && roomTypesResult.data) {
         setRoomTypes(roomTypesResult.data);
-          const foundRoomType = roomTypesResult.data.find(t => t.id === room?.roomType);
-          if (foundRoomType) {
-            setRoomType(foundRoomType);
-          }
+        const foundRoomType = roomTypesResult.data.find(t => t.id === room?.roomType);
+        if (foundRoomType) {
+          setRoomType(foundRoomType);
         }
+      }
 
-        if (dormitoryResult.success && dormitoryResult.data) {
-          setDormitoryName(dormitoryResult.data.name);
+      if (dormitoryResult.success && dormitoryResult.data) {
+        setDormitoryName(dormitoryResult.data.name);
         setTotalFloors(dormitoryResult.data.totalFloors || 1);
-          setDormitoryConfig({
-            additionalFees: {
-              airConditioner: dormitoryResult.data.config?.additionalFees?.airConditioner ?? null,
-              parking: dormitoryResult.data.config?.additionalFees?.parking ?? null,
-              floorRates: dormitoryResult.data.config?.additionalFees?.floorRates || {},
-              utilities: {
-                water: {
-                  perPerson: dormitoryResult.data.config?.additionalFees?.utilities?.water?.perPerson ?? null
-                },
-                electric: {
-                  unit: dormitoryResult.data.config?.additionalFees?.utilities?.electric?.unit ?? null
-                }
+        setDormitoryConfig({
+          additionalFees: {
+            airConditioner: dormitoryResult.data.config?.additionalFees?.airConditioner ?? null,
+            parking: dormitoryResult.data.config?.additionalFees?.parking ?? null,
+            floorRates: dormitoryResult.data.config?.additionalFees?.floorRates || {},
+            utilities: {
+              water: {
+                perPerson: dormitoryResult.data.config?.additionalFees?.utilities?.water?.perPerson ?? null
+              },
+              electric: {
+                unit: dormitoryResult.data.config?.additionalFees?.utilities?.electric?.unit ?? null
               }
             }
-          });
-        }
-
-        if (tenantsResult.success && tenantsResult.data) {
-        const foundTenant = tenantsResult.data.find(t => t.roomNumber === roomNumber);
-          if (foundTenant) {
-            setCurrentTenant(foundTenant);
           }
-        }
-      } catch (error) {
-        console.error("Error loading data:", error);
-        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
-      } finally {
-        setIsLoading(false);
+        });
       }
-    };
 
-  useEffect(() => {
-    if (dormId && roomNumber) {
-    loadData();
+      if (tenantsResult.success && tenantsResult.data) {
+        const foundTenant = tenantsResult.data.find(t => t.roomNumber === roomNumber);
+        if (foundTenant) {
+          setCurrentTenant(foundTenant);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    } finally {
+      setIsLoading(false);
     }
   }, [dormId, roomNumber, room?.roomType]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   if (isLoading) {
     return (

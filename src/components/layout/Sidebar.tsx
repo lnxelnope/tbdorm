@@ -75,9 +75,10 @@ const navItems: NavItem[] = [
 interface SidebarProps {
   isCollapsed: boolean;
   onToggle: () => void;
+  onMobileItemClick?: () => void;
 }
 
-export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
+export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: SidebarProps) {
   const pathname = usePathname();
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     return (
       <Link
         href={item.href}
+        onClick={onMobileItemClick}
         className={cn(
           "flex items-center gap-2 text-sm font-medium rounded-lg transition-colors",
           isCollapsed ? "justify-center px-2" : "px-4",
@@ -124,7 +126,8 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     <div className="relative h-full">
       <nav className={cn(
         "h-full bg-white text-gray-700 border-r border-gray-100 shadow-sm transition-all duration-300 relative",
-        isCollapsed ? "w-16" : "w-64"
+        isCollapsed ? "w-16" : "w-64",
+        "md:w-64"
       )}>
         <div className="p-4">
           <div className="flex items-center justify-between mb-8">
@@ -147,11 +150,11 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           </div>
         </div>
 
-        {/* Toggle Button */}
         <button
           onClick={onToggle}
           className={cn(
             "absolute -right-4 bottom-8 z-50 bg-white text-gray-700 p-2 rounded-full shadow-sm border border-gray-100 hover:bg-gray-50 transition-all duration-300",
+            "hidden md:block"
           )}
         >
           {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}

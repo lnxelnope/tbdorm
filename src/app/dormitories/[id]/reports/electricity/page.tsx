@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import {
@@ -33,11 +33,42 @@ export default function ElectricityReportPage({
   const [monthlyUsage, setMonthlyUsage] = useState<any[]>([]);
   const [topRooms, setTopRooms] = useState<any[]>([]);
 
-  useEffect(() => {
-    loadData();
-  }, [params.id]);
+  const calculateMonthlyUsage = useCallback((readings: any[]) => {
+    const monthlyData: { [key: string]: number } = {};
+    readings.forEach((reading) => {
+      const date = new Date(reading.readingDate);
+      const monthYear = `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, "0")}`;
+      monthlyData[monthYear] = (monthlyData[monthYear] || 0) + reading.units;
+    });
 
-  const loadData = async () => {
+    return Object.entries(monthlyData)
+      .map(([month, units]) => ({
+        month,
+        units,
+        cost: units * parseFloat(currentRate),
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [currentRate]);
+
+  const calculateTopRooms = useCallback((readings: any[]) => {
+    const roomUsage: { [key: string]: number } = {};
+    readings.forEach((reading) => {
+      roomUsage[reading.roomId] = (roomUsage[reading.roomId] || 0) + reading.units;
+    });
+
+    return Object.entries(roomUsage)
+      .map(([roomId, units]) => ({
+        roomId,
+        units,
+        cost: units * parseFloat(currentRate),
+      }))
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 5);
+  }, [currentRate]);
+
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [dormitoryResult, readingsResult, roomsResult] = await Promise.all([
@@ -74,42 +105,11 @@ export default function ElectricityReportPage({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id, calculateMonthlyUsage, calculateTopRooms]);
 
-  const calculateMonthlyUsage = (readings: any[]) => {
-    const monthlyData: { [key: string]: number } = {};
-    readings.forEach((reading) => {
-      const date = new Date(reading.readingDate);
-      const monthYear = `${date.getFullYear()}-${String(
-        date.getMonth() + 1
-      ).padStart(2, "0")}`;
-      monthlyData[monthYear] = (monthlyData[monthYear] || 0) + reading.units;
-    });
-
-    return Object.entries(monthlyData)
-      .map(([month, units]) => ({
-        month,
-        units,
-        cost: units * parseFloat(currentRate),
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-  };
-
-  const calculateTopRooms = (readings: any[]) => {
-    const roomUsage: { [key: string]: number } = {};
-    readings.forEach((reading) => {
-      roomUsage[reading.roomId] = (roomUsage[reading.roomId] || 0) + reading.units;
-    });
-
-    return Object.entries(roomUsage)
-      .map(([roomId, units]) => ({
-        roomId,
-        units,
-        cost: units * parseFloat(currentRate),
-      }))
-      .sort((a, b) => b.units - a.units)
-      .slice(0, 5);
-  };
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const getTotalUsage = () => {
     return readings.reduce((sum, reading) => sum + reading.units, 0);

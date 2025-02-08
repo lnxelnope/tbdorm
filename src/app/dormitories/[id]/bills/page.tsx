@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Filter, Search, FileText, Receipt, CreditCard } from "lucide-react";
 import { Bill, Payment } from "@/types/dormitory";
 import { getBills, getPayments } from "@/lib/firebase/firebaseUtils";
@@ -17,11 +17,7 @@ export default function BillsPage({ params }: { params: { id: string } }) {
   });
   const [searchTerm, setSearchTerm] = useState("");
 
-  useEffect(() => {
-    loadBills();
-  }, [params.id, filters]);
-
-  const loadBills = async () => {
+  const loadBills = useCallback(async () => {
     try {
       setIsLoading(true);
       const result = await getBills(params.id, {
@@ -39,7 +35,11 @@ export default function BillsPage({ params }: { params: { id: string } }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id, filters]);
+
+  useEffect(() => {
+    loadBills();
+  }, [loadBills]);
 
   const filteredBills = bills.filter((bill) => {
     if (!searchTerm) return true;

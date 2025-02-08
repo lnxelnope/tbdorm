@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { RoomType } from "@/types/dormitory";
 import { getRoomTypes, addRoomType, updateRoomType, deleteRoomType } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
@@ -28,13 +28,11 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
     airConditionerFee: 0,
     parkingFee: 0,
   });
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    loadRoomTypes();
-  }, []);
-
-  const loadRoomTypes = async () => {
+  const loadRoomTypes = useCallback(async () => {
     try {
+      setIsLoading(true);
       const result = await getRoomTypes(params.id);
       if (result.success && result.data) {
         setRoomTypes(result.data);
@@ -42,8 +40,14 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
     } catch (error) {
       console.error("Error loading room types:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadRoomTypes();
+  }, [loadRoomTypes]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Printer, Receipt } from "lucide-react";
 import Link from "next/link";
 import { Bill, Payment, Tenant } from "@/types/dormitory";
@@ -16,16 +16,12 @@ export default function BillDetailsPage({
   const [bill, setBill] = useState<Bill | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
 
-  useEffect(() => {
-    loadBillDetails();
-  }, [params.id, params.billId]);
-
-  const loadBillDetails = async () => {
+  const loadBillDetails = useCallback(async () => {
     try {
       setIsLoading(true);
-      const billsResult = await getBills(params.id);
-      if (billsResult.success && billsResult.data) {
-        const foundBill = billsResult.data.find((b) => b.id === params.billId);
+      const result = await getBills(params.id);
+      if (result.success && result.data) {
+        const foundBill = result.data.find((b) => b.id === params.billId);
         if (foundBill) {
           setBill(foundBill);
 
@@ -47,7 +43,11 @@ export default function BillDetailsPage({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id, params.billId]);
+
+  useEffect(() => {
+    loadBillDetails();
+  }, [loadBillDetails]);
 
   const getStatusBadgeColor = (status: Bill["status"]) => {
     switch (status) {

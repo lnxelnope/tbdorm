@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -28,11 +28,7 @@ export default function LineNotifySettingsPage({
     },
   });
 
-  useEffect(() => {
-    loadConfig();
-  }, [params.id]);
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     try {
       const result = await getLineNotifyConfig(params.id);
       if (result.success && result.data) {
@@ -53,7 +49,11 @@ export default function LineNotifySettingsPage({
       console.error("Error loading LINE Notify config:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดการตั้งค่า LINE Notify");
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

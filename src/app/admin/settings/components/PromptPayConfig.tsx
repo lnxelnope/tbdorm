@@ -1,48 +1,74 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection } from 'firebase/firestore';
 import { db } from '@/lib/firebase/firebaseConfig';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface PromptPaySettings {
   accountName: string;
   accountNumber: string;
-  qrCodeUrl?: string;
   isActive: boolean;
   dormitoryId: string;
+  qrCodeUrl?: string;
 }
 
+const getPromptPayConfig = async (dormitoryId: string) => {
+  try {
+    const docRef = doc(db, 'dormitories', dormitoryId, 'settings', 'promptpay');
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return {
+        success: true,
+        data: docSnap.data() as PromptPaySettings
+      };
+    }
+    
+    return {
+      success: true,
+      data: null
+    };
+  } catch (error) {
+    console.error('Error getting PromptPay config:', error);
+    return {
+      success: false,
+      error: 'Failed to load PromptPay configuration'
+    };
+  }
+};
+
 export default function PromptPayConfig() {
-  const [settings, setSettings] = useState<PromptPaySettings>({
+  const [config, setConfig] = useState<PromptPaySettings>({
     accountName: '',
     accountNumber: '',
     isActive: false,
     dormitoryId: ''
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedDormitory, setSelectedDormitory] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedDormitory, setSelectedDormitory] = useState("");
 
-  useEffect(() => {
-    if (selectedDormitory) {
-      loadSettings();
+  const loadSettings = useCallback(async () => {
+    if (!selectedDormitory) return;
+    
+    try {
+      setIsLoading(true);
+      const result = await getPromptPayConfig(selectedDormitory);
+      if (result.success && result.data) {
+        setConfig(result.data);
+      }
+    } catch (error) {
+      console.error("Error loading PromptPay config:", error);
+      toast.error("เกิดข้อผิดพลาดในการโหลดการตั้งค่า PromptPay");
+    } finally {
+      setIsLoading(false);
     }
   }, [selectedDormitory]);
 
-  const loadSettings = async () => {
-    try {
-      const docRef = doc(db, 'settings', `promptpay_${selectedDormitory}`);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        setSettings(docSnap.data() as PromptPaySettings);
-      }
-    } catch (error) {
-      console.error('Error loading PromptPay settings:', error);
-      toast.error('เกิดข้อผิดพลาดในการโหลดการตั้งค่า PromptPay');
-    }
-  };
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -50,7 +76,7 @@ export default function PromptPayConfig() {
 
     try {
       const updatedSettings = {
-        ...settings,
+        ...config,
         dormitoryId: selectedDormitory,
         updatedAt: new Date().toISOString()
       };
@@ -70,7 +96,7 @@ export default function PromptPayConfig() {
     // อ้างอิงจาก EMVCo Merchant QR Code specification
     const version = '000201';  // เวอร์ชัน
     const method = '010211';   // ชำระเงินด้วย PromptPay
-    const merchantInfo = `2937${settings.accountNumber.length.toString().padStart(2, '0')}${settings.accountNumber}`;
+    const merchantInfo = `2937${config?.accountNumber.length.toString().padStart(2, '0')}${config?.accountNumber}`;
     const countryCode = '5802TH';
     const currencyCode = '5303764';
     const amountField = paymentAmount ? `54${paymentAmount.toString().length.toString().padStart(2, '0')}${paymentAmount}` : '';
@@ -93,8 +119,8 @@ export default function PromptPayConfig() {
           <label className="block text-sm font-medium mb-1">ชื่อบัญชี</label>
           <input
             type="text"
-            value={settings.accountName}
-            onChange={(e) => setSettings({ ...settings, accountName: e.target.value })}
+            value={config?.accountName}
+            onChange={(e) => setConfig({ ...config, accountName: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           />
@@ -104,8 +130,8 @@ export default function PromptPayConfig() {
           <label className="block text-sm font-medium mb-1">เบอร์โทรศัพท์/เลขประจำตัวผู้เสียภาษี</label>
           <input
             type="text"
-            value={settings.accountNumber}
-            onChange={(e) => setSettings({ ...settings, accountNumber: e.target.value })}
+            value={config?.accountNumber}
+            onChange={(e) => setConfig({ ...config, accountNumber: e.target.value })}
             pattern="\d{10}|\d{13}"
             title="กรุณากรอกเบอร์โทรศัพท์ 10 หลัก หรือเลขประจำตัวผู้เสียภาษี 13 หลัก"
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -117,8 +143,8 @@ export default function PromptPayConfig() {
           <input
             type="checkbox"
             id="isActive"
-            checked={settings.isActive}
-            onChange={(e) => setSettings({ ...settings, isActive: e.target.checked })}
+            checked={config?.isActive}
+            onChange={(e) => setConfig({ ...config, isActive: e.target.checked })}
             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
           />
           <label htmlFor="isActive" className="text-sm font-medium">
@@ -126,7 +152,7 @@ export default function PromptPayConfig() {
           </label>
         </div>
 
-        {settings.accountNumber && (
+        {config?.accountNumber && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 mb-2">QR Code</h4>
             <div className="p-4 bg-white border border-gray-200 rounded-lg">

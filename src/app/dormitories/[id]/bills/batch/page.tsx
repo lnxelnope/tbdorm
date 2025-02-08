@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Room, RoomType, Tenant, Bill, BillItem } from "@/types/dormitory";
@@ -33,11 +33,7 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
     ).toISOString().split("T")[0],
   });
 
-  useEffect(() => {
-    loadInitialData();
-  }, [params.id]);
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [roomsResult, roomTypesResult, tenantsResult] = await Promise.all([
@@ -73,7 +69,11 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
   const handleSelectAllRooms = (checked: boolean) => {
     if (checked) {

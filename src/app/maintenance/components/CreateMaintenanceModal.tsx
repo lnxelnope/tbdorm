@@ -7,6 +7,7 @@ import * as z from 'zod';
 import { Dialog } from '@headlessui/react';
 import { toast } from 'sonner';
 import { createMaintenanceRequest, uploadMaintenanceImage } from '@/lib/firebase/maintenanceUtils';
+import Image from 'next/image';
 
 const schema = z.object({
   title: z.string().min(1, 'กรุณาระบุหัวข้อ'),
@@ -181,9 +182,11 @@ export default function CreateMaintenanceModal({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedImages.map((file, index) => (
                     <div key={index} className="relative">
-                      <img
+                      <Image
                         src={URL.createObjectURL(file)}
                         alt={`Preview ${index + 1}`}
+                        width={80}
+                        height={80}
                         className="h-20 w-20 object-cover rounded-md"
                       />
                       <button

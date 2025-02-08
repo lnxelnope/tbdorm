@@ -10,6 +10,7 @@ import RecentActivities from "@/components/dashboard/RecentActivities";
 import FraudAlerts from "@/components/dashboard/FraudAlerts";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import Link from "next/link";
+import Image from 'next/image';
 
 interface DashboardStats {
   totalDormitories: number;
@@ -176,7 +177,13 @@ export default function DashboardPage() {
               onClick={signInWithGoogle}
               className="btn btn-primary w-full flex items-center justify-center gap-2"
             >
-              <img src="/google.svg" alt="Google" className="w-5 h-5" />
+              <Image 
+                src="/google.svg" 
+                alt="Google" 
+                width={20}
+                height={20}
+                className="w-5 h-5" 
+              />
               เข้าสู่ระบบด้วย Google
             </button>
           </div>

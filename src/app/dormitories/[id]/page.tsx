@@ -5,12 +5,11 @@ import Link from "next/link";
 import { ArrowLeft, Building2, Edit, Settings, CheckCircle, XCircle, LayoutDashboard, Home, Boxes, Users, Gauge, Receipt, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { getDormitory, getDormitoryStats } from "@/lib/firebase/firebaseUtils";
-import { Dormitory, DormitoryStats } from "@/types/dormitory";
+import { Dormitory, DormitoryStats, Room } from "@/types/dormitory";
 import { useRouter, useParams } from "next/navigation";
 import React from "react";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
-import { Room } from "@/types/room";
 
 // แยก Loading component
 function LoadingSpinner() {
