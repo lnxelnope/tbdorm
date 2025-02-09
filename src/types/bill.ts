@@ -1,34 +1,37 @@
 export interface Bill {
   id: string;
   dormitoryId: string;
-  roomId: string;
-  tenantId: string;
-  month: string; // YYYY-MM
-  dueDate: string;
-  status: 'pending' | 'paid' | 'overdue';
+  roomNumber: string;
+  tenantName: string;
+  month: number;
+  year: number;
+  dueDate: Date;
+  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
   items: BillItem[];
   totalAmount: number;
   paidAmount: number;
-  paidAt?: string;
-  paymentMethod?: 'cash' | 'transfer' | 'promptpay' | 'bank_transfer';
-  paymentProof?: string;
-  bankTransferInfo?: {
-    bankName: string;
-    accountNumber: string;
-    transferDate: string;
-    transferAmount: number;
-    reference?: string;
+  remainingAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  payments: Payment[];
+  notificationsSent: {
+    initial: boolean;
+    reminder: boolean;
+    overdue: boolean;
   };
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface BillItem {
-  type: 'rent' | 'water' | 'electric' | 'maintenance' | 'other';
+  type: 'rent' | 'water' | 'electric' | 'parking' | 'air_conditioner' | 'other';
   description: string;
   amount: number;
-  unit?: number;
-  rate?: number;
+  quantity?: number;
+  unitPrice?: number;
+  utilityReading?: {
+    previous: number;
+    current: number;
+    units: number;
+  };
 }
 
 export interface MeterReading {
@@ -82,12 +85,17 @@ export interface BankAccount {
 export interface Payment {
   id: string;
   billId: string;
+  dormitoryId: string;
+  tenantId: string;
   amount: number;
   method: 'cash' | 'transfer' | 'promptpay';
-  reference?: string;
+  status: 'pending' | 'completed' | 'failed';
+  reference?: string; // เลขอ้างอิงการโอน หรือ Transaction ID
+  evidence?: string; // URL รูปสลิป
   paidAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  processedBy?: string; // ID ของผู้ดูแลที่ดำเนินการ
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'promptpay'; 

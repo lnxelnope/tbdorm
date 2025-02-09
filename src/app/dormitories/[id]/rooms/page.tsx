@@ -15,6 +15,7 @@ import { deleteRoom } from "@/lib/firebase/firebaseUtils";
 import { calculateTotalPrice } from "./utils";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
 interface DormitoryConfig {
   additionalFees: {
@@ -45,6 +46,32 @@ interface Filters {
   roomType: string;
   hasAirConditioner: boolean;
   hasParking: boolean;
+}
+
+interface DormitoryResult {
+  success: boolean;
+  data?: {
+    id: string;
+    name: string;
+    totalFloors: number;
+    config?: {
+      additionalFees?: {
+        airConditioner?: number | null;
+        parking?: number | null;
+        floorRates?: {
+          [key: string]: number | null;
+        };
+        utilities?: {
+          water?: {
+            perPerson?: number | null;
+          };
+          electric?: {
+            unit?: number | null;
+          };
+        };
+      };
+    };
+  };
 }
 
 function RoomsPageContent({ dormId }: { dormId: string }) {
@@ -79,17 +106,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   });
 
   const searchParams = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [dormitoryResult, setDormitoryResult] = useState<{
-    success: boolean;
-    data?: {
-      name: string;
-      totalFloors: number;
-      config?: any;
-    };
-  } | null>(null);
+  const [dormitoryResult, setDormitoryResult] = useState<DormitoryResult | null>(null);
 
   const router = useRouter();
 
@@ -103,8 +123,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   const filteredRooms = useMemo(() => {
     return rooms.filter((room) => {
       if (
-        searchTerm &&
-        !room.number.toLowerCase().includes(searchTerm.toLowerCase())
+        searchQuery &&
+        !room.number.toLowerCase().includes(searchQuery.toLowerCase())
       ) {
         return false;
       }
@@ -131,7 +151,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
 
       return true;
     });
-  }, [rooms, searchTerm, filters]);
+  }, [rooms, searchQuery, filters]);
 
   const sortedAndFilteredRooms = useMemo(() => {
     return [...filteredRooms].sort((a, b) => {
@@ -183,7 +203,17 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         }
 
         if (dormResult.success && dormResult.data) {
-          setDormitoryResult(dormResult);
+          // แปลง dormResult เป็น DormitoryResult type
+          const formattedResult: DormitoryResult = {
+            success: dormResult.success,
+            data: {
+              id: dormResult.data.id,
+              name: dormResult.data.name,
+              totalFloors: dormResult.data.totalFloors || 1,
+              config: dormResult.data.config
+            }
+          };
+          setDormitoryResult(formattedResult);
           setDormitoryName(dormResult.data.name);
           setDormitoryConfig({
             additionalFees: {
@@ -216,9 +246,9 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
     fetchData();
   }, [dormId]);
 
-  // อัพเดท searchTerm เมื่อ URL parameter เปลี่ยน
+  // อัพเดท search query เมื่อ URL parameter เปลี่ยน
   useEffect(() => {
-    setSearchTerm(searchParams.get("search") || "");
+    setSearchQuery(searchParams.get('search') || '');
   }, [searchParams]);
 
   const handleAddRoom = (newRoom: Room) => {
@@ -394,8 +424,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           </div>
           <input
             type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ค้นหาห้องพัก..."
             className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-400 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-gray-200 focus:border-gray-200 sm:text-sm"
           />
@@ -591,11 +621,11 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Link 
+                      <Link
                         href={`/dormitories/${dormId}/rooms/${room.number}`}
-                        className="text-sm font-medium text-gray-900 hover:text-gray-900"
+                        className="text-blue-600 hover:text-blue-800 font-medium hover:underline transition-colors duration-200"
                       >
-                        ห้อง {room.number}
+                        {room.number}
                       </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -669,16 +699,16 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                         <span className="text-gray-500">-</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                       <button
                         onClick={() => setSelectedRoom(room)}
-                        className="text-gray-900 hover:text-gray-900 mr-4"
+                        className="text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200"
                       >
                         แก้ไข
                       </button>
                       <button
                         onClick={() => handleDeleteRoom(room.id)}
-                        className="text-red-600 hover:text-red-900"
+                        className="text-red-600 hover:text-red-800 hover:underline transition-colors duration-200"
                       >
                         ลบ
                       </button>
@@ -717,7 +747,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   );
 }
 
+// เพิ่ม Server Component สำหรับ page
 export default function RoomsPage({ params }: { params: { id: string } }) {
-  const dormId = React.use(Promise.resolve(params.id));
-  return <RoomsPageContent dormId={dormId} />;
+  return <RoomsPageContent dormId={params.id} />;
 } 

@@ -25,6 +25,7 @@ export default function EditRoomPage() {
     hasAirConditioner: false,
     hasParking: false,
     status: "available" as Room["status"],
+    initialMeterReading: 0,
   });
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function EditRoomPage() {
               hasAirConditioner: foundRoom.hasAirConditioner,
               hasParking: foundRoom.hasParking,
               status: foundRoom.status,
+              initialMeterReading: foundRoom.initialMeterReading || 0,
             });
           }
         }
@@ -250,6 +252,24 @@ export default function EditRoomPage() {
                 />
                 <span className="ml-2 text-sm text-gray-600">ที่จอดรถ</span>
               </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                ค่ามิเตอร์เริ่มต้น
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.initialMeterReading}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    initialMeterReading: parseFloat(e.target.value) || 0,
+                  })
+                }
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              />
             </div>
 
             <div className="flex justify-end space-x-3">

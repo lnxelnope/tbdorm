@@ -22,6 +22,7 @@ import {
   collectionGroup,
   arrayUnion,
   Timestamp,
+  limit,
 } from "firebase/firestore";
 import type { Dormitory, Room, RoomType, Tenant, UtilityReading, Bill, Payment, PromptPayConfig, LineNotifyConfig } from '@/types/dormitory';
 
@@ -1075,6 +1076,99 @@ export const recalculateOutstandingBalance = async (dormitoryId: string, tenantI
     return { success: true, outstandingBalance };
   } catch (error) {
     console.error('Error recalculating outstanding balance:', error);
+    return { success: false, error };
+  }
+};
+
+// ฟังก์ชันสำหรับบันทึกค่ามิเตอร์
+export const saveMeterReading = async (dormitoryId: string, data: {
+  roomId: string;
+  previousReading: number;
+  currentReading: number;
+  readingDate: string;
+  type: 'electric' | 'water';
+}) => {
+  try {
+    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
+    const docRef = await addDoc(meterReadingRef, {
+      ...data,
+      unitsUsed: data.currentReading - data.previousReading,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      success: true,
+      data: {
+        id: docRef.id,
+        ...data
+      }
+    };
+  } catch (error) {
+    console.error('Error saving meter reading:', error);
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์'
+    };
+  }
+};
+
+// ฟังก์ชันสำหรับดึงประวัติค่ามิเตอร์
+export const getMeterReadingHistory = async (dormitoryId: string, roomId: string, type: 'electric' | 'water') => {
+  try {
+    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
+    const q = query(
+      meterReadingRef,
+      where('roomId', '==', roomId),
+      where('type', '==', type),
+      orderBy('readingDate', 'desc'),
+      limit(12) // ดึงข้อมูลย้อนหลัง 12 เดือน
+    );
+
+    const snapshot = await getDocs(q);
+    const readings = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return {
+      success: true,
+      data: readings
+    };
+  } catch (error) {
+    console.error('Error getting meter reading history:', error);
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการดึงประวัติค่ามิเตอร์'
+    };
+  }
+};
+
+// ฟังก์ชันสำหรับดึงค่ามิเตอร์ล่าสุด
+export const getLatestMeterReading = async (dormitoryId: string, roomId: string, type: 'electric' | 'water') => {
+  try {
+    const readingsRef = collection(db, 'meter_readings');
+    const q = query(
+      readingsRef,
+      where('roomId', '==', roomId),
+      where('type', '==', type),
+      orderBy('readingDate', 'desc'),
+      limit(1)
+    );
+    
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      return { success: true, data: null };
+    }
+
+    const latestReading = {
+      id: snapshot.docs[0].id,
+      ...snapshot.docs[0].data()
+    };
+
+    return { success: true, data: latestReading };
+  } catch (error) {
+    console.error('Error getting latest meter reading:', error);
     return { success: false, error };
   }
 };

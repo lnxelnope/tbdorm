@@ -3,9 +3,12 @@
 import { useState, useEffect } from "react";
 import { Dialog } from "@headlessui/react";
 import { X } from "lucide-react";
-import { Dormitory, Tenant } from "@/types/dormitory";
+import type { Dormitory } from '@/types/dormitory';
+import type { Tenant } from '@/types/tenant';
 import { toast } from "sonner";
 import { updateTenant } from "@/lib/firebase/firebaseUtils";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
 
 interface EditTenantModalProps {
   isOpen: boolean;
@@ -22,12 +25,14 @@ export default function EditTenantModal({
   dormitories,
   onSuccess,
 }: EditTenantModalProps) {
+  const [workplaces, setWorkplaces] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: tenant.name,
     idCard: tenant.idCard,
     phone: tenant.phone,
     email: tenant.email,
     lineId: tenant.lineId,
+    workplace: tenant.workplace || "",
     currentAddress: tenant.currentAddress,
     dormitoryId: tenant.dormitoryId,
     roomNumber: tenant.roomNumber,
@@ -51,6 +56,7 @@ export default function EditTenantModal({
       phone: tenant.phone,
       email: tenant.email,
       lineId: tenant.lineId,
+      workplace: tenant.workplace || "",
       currentAddress: tenant.currentAddress,
       dormitoryId: tenant.dormitoryId,
       roomNumber: tenant.roomNumber,
@@ -64,6 +70,21 @@ export default function EditTenantModal({
       },
     });
   }, [tenant]);
+
+  const loadWorkplaces = async () => {
+    try {
+      const workplacesRef = collection(db, 'workplaces');
+      const snapshot = await getDocs(workplacesRef);
+      const workplacesList = snapshot.docs.map(doc => doc.data().name);
+      setWorkplaces(workplacesList);
+    } catch (error) {
+      console.error('Error loading workplaces:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkplaces();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +138,7 @@ export default function EditTenantModal({
             <div className="grid grid-cols-2 gap-6">
               {/* ข้อมูลผู้เช่า */}
               <div className="space-y-4">
-                <h3 className="font-medium text-white">ข้อมูลผู้เช่า</h3>
+                <h3 className="font-medium text-gray-900">ข้อมูลผู้เช่า</h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     ชื่อ-นามสกุล <span className="text-red-500">*</span>
@@ -129,7 +150,7 @@ export default function EditTenantModal({
                       setFormData({ ...formData, name: e.target.value })
                     }
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -139,14 +160,9 @@ export default function EditTenantModal({
                   <input
                     type="text"
                     value={formData.idCard}
-                    onChange={(e) =>
-                      setFormData({ ...formData, idCard: e.target.value })
-                    }
-                    required
-                    maxLength={13}
-                    pattern="[0-9]{13}"
-                    title="กรุณากรอกเลขบัตรประชาชน 13 หลัก"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    readOnly
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200 cursor-not-allowed"
+                    title="ไม่สามารถแก้ไขเลขบัตรประชาชนได้"
                   />
                 </div>
                 <div>
@@ -160,12 +176,12 @@ export default function EditTenantModal({
                       setFormData({ ...formData, phone: e.target.value })
                     }
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Line ID <span className="text-red-500">*</span>
+                    Line ID <span className="text-gray-500">(ไม่จำเป็น)</span>
                   </label>
                   <input
                     type="text"
@@ -173,9 +189,28 @@ export default function EditTenantModal({
                     onChange={(e) =>
                       setFormData({ ...formData, lineId: e.target.value })
                     }
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    ที่ทำงาน <span className="text-gray-500">(ไม่จำเป็น)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.workplace}
+                    onChange={(e) =>
+                      setFormData({ ...formData, workplace: e.target.value })
+                    }
+                    list="workplaces"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    placeholder="กรอกชื่อที่ทำงาน"
+                  />
+                  <datalist id="workplaces">
+                    {workplaces.map((workplace) => (
+                      <option key={workplace} value={workplace} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
@@ -187,7 +222,7 @@ export default function EditTenantModal({
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -200,14 +235,14 @@ export default function EditTenantModal({
                       setFormData({ ...formData, currentAddress: e.target.value })
                     }
                     rows={3}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
               </div>
 
               {/* ข้อมูลการเช่า */}
               <div className="space-y-4">
-                <h3 className="font-medium text-white">ข้อมูลการเช่า</h3>
+                <h3 className="font-medium text-gray-900">ข้อมูลการเช่า</h3>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     หอพัก <span className="text-red-500">*</span>
@@ -218,7 +253,7 @@ export default function EditTenantModal({
                       setFormData({ ...formData, dormitoryId: e.target.value })
                     }
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   >
                     <option value="">เลือกหอพัก</option>
                     {dormitories.map((dorm) => (
@@ -239,7 +274,7 @@ export default function EditTenantModal({
                       setFormData({ ...formData, roomNumber: e.target.value })
                     }
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -252,7 +287,7 @@ export default function EditTenantModal({
                     onChange={(e) =>
                       setFormData({ ...formData, startDate: e.target.value })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -270,7 +305,7 @@ export default function EditTenantModal({
                     }
                     required
                     min="0"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -287,7 +322,7 @@ export default function EditTenantModal({
                       })
                     }
                     min="1"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
               </div>
@@ -295,7 +330,7 @@ export default function EditTenantModal({
 
             {/* ผู้ติดต่อฉุกเฉิน */}
             <div className="space-y-4">
-              <h3 className="font-medium text-white">ผู้ติดต่อฉุกเฉิน <span className="text-gray-500">(ไม่จำเป็น)</span></h3>
+              <h3 className="font-medium text-gray-900">ผู้ติดต่อฉุกเฉิน <span className="text-gray-500">(ไม่จำเป็น)</span></h3>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
@@ -313,7 +348,7 @@ export default function EditTenantModal({
                         },
                       })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -332,7 +367,7 @@ export default function EditTenantModal({
                         },
                       })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -351,7 +386,7 @@ export default function EditTenantModal({
                         },
                       })
                     }
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   />
                 </div>
               </div>

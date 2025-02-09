@@ -14,66 +14,76 @@ export const createBill = async (bill: Omit<Bill, 'id' | 'createdAt' | 'updatedA
     return { success: true, data: { id: docRef.id, ...billData } };
   } catch (error) {
     console.error('Error creating bill:', error);
-    return { success: false, error };
+    return { success: false, error: 'เกิดข้อผิดพลาดในการสร้างบิล' };
   }
 };
 
-export const getBillsByDormitory = async (dormitoryId: string, month?: string) => {
+export const getBillsByDormitory = async (dormitoryId: string) => {
   try {
-    let q = query(
-      collection(db, 'bills'),
+    const billsRef = collection(db, 'bills');
+    const q = query(
+      billsRef,
       where('dormitoryId', '==', dormitoryId),
       orderBy('createdAt', 'desc')
     );
     
-    if (month) {
-      q = query(q, where('month', '==', month));
-    }
-
     const snapshot = await getDocs(q);
-    const bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Bill[];
-    return { success: true, data: bills };
+    const bills = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Bill[];
+
+    return {
+      success: true,
+      data: bills
+    };
   } catch (error) {
     console.error('Error getting bills:', error);
-    return { success: false, error };
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการโหลดข้อมูลบิล'
+    };
   }
 };
 
-export const updateBillStatus = async (billId: string, status: Bill['status'], paymentDetails?: {
-  paymentMethod: Bill['paymentMethod'];
-  paidAmount: number;
-  paymentProof?: string;
-  bankTransferInfo?: {
-    bankName: string;
-    accountNumber: string;
-    transferDate: string;
-    transferAmount: number;
-    reference?: string;
-  };
-}) => {
+export const updateBill = async (billId: string, updates: Partial<Bill>) => {
   try {
     const billRef = doc(db, 'bills', billId);
-    const updateData: Partial<Bill> = {
-      status,
-      updatedAt: new Date().toISOString(),
+    await updateDoc(billRef, {
+      ...updates,
+      updatedAt: new Date()
+    });
+
+    return {
+      success: true
     };
+  } catch (error) {
+    console.error('Error updating bill:', error);
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการอัปเดตบิล'
+    };
+  }
+};
 
-    if (status === 'paid' && paymentDetails) {
-      updateData.paymentMethod = paymentDetails.paymentMethod;
-      updateData.paidAmount = paymentDetails.paidAmount;
-      updateData.paidAt = new Date().toISOString();
-      updateData.paymentProof = paymentDetails.paymentProof;
-      
-      if (paymentDetails.paymentMethod === 'bank_transfer' && paymentDetails.bankTransferInfo) {
-        updateData.bankTransferInfo = paymentDetails.bankTransferInfo;
-      }
-    }
+export const updateBillStatus = async (billId: string, status: Bill['status'], updates: Partial<Bill>) => {
+  try {
+    const billRef = doc(db, 'bills', billId);
+    await updateDoc(billRef, {
+      status,
+      ...updates,
+      updatedAt: new Date()
+    });
 
-    await updateDoc(billRef, updateData);
-    return { success: true };
+    return {
+      success: true
+    };
   } catch (error) {
     console.error('Error updating bill status:', error);
-    return { success: false, error };
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการอัปเดตสถานะบิล'
+    };
   }
 };
 

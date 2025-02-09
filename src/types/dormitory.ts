@@ -2,7 +2,7 @@ export interface RoomType {
   id: string;
   name: string; // ชื่อรูปแบบห้อง เช่น มาตรฐาน, ห้องมุม
   basePrice: number;
-  isDefault?: boolean; // เป็นรูปแบบ default หรือไม่
+  isDefault: boolean; // เป็นรูปแบบ default หรือไม่
   description?: string; // คำอธิบายเพิ่มเติม (ถ้ามี)
   facilities?: string[];
   size?: {
@@ -16,12 +16,20 @@ export interface RoomType {
 export interface DormitoryConfig {
   id: string;
   dormitoryId: string;
-  roomTypes: RoomType[];
+  roomTypes: {
+    [key: string]: RoomType;
+  };
   additionalFees: {
     airConditioner: number | null; // ค่าบริการแอร์
     parking: number | null; // ค่าที่จอดรถส่วนตัว
-    floorRates: { // อัตราค่าบริการตามชั้น
-      [key: string]: number | null;
+    floorRates: Record<string, number>;
+    utilities: {
+      water: {
+        perPerson: number | null;
+      };
+      electric: {
+        unit: number | null;
+      };
     };
   };
 }
@@ -37,6 +45,7 @@ export interface Room {
   hasAirConditioner: boolean;
   hasParking: boolean;
   initialMeterReading?: number; // เพิ่มฟิลด์ค่ามิเตอร์เริ่มต้น
+  tenantName?: string; // เพิ่ม tenantName
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -69,16 +78,20 @@ export const calculateTotalRent = (
 export interface Dormitory {
   id: string;
   name: string;
-  address: string;
-  totalFloors: number;
-  floors: number;
+  address?: string;
+  totalFloors?: number;
+  floors?: number[];
+  facilities?: string[];
+  status?: string;
   config?: {
-    roomTypes: Record<string, RoomType>;
+    roomTypes?: {
+      [key: string]: RoomType;
+    };
     additionalFees?: {
       airConditioner: number | null;
       parking: number | null;
-      floorRates: Record<string, number | null>;
-      utilities?: {
+      floorRates: Record<string, number>;
+      utilities: {
         water: {
           perPerson: number | null;
         };
@@ -88,17 +101,15 @@ export interface Dormitory {
       };
     };
   };
-  facilities: string[];
   images: string[];
-  status: 'active' | 'inactive';
   description?: string;
   phone?: string;
   location?: {
     latitude: string;
     longitude: string;
   };
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
   totalRooms?: number;
   rooms?: Room[];
 }
@@ -116,25 +127,27 @@ export interface DormitoryStats {
 export interface Tenant {
   id: string;
   name: string;
-  idCard: string;
-  phone: string;
-  email?: string;
-  lineId?: string;
-  currentAddress?: string;
   dormitoryId: string;
   roomNumber: string;
   startDate: string;
   deposit: number;
   numberOfResidents: number;
-  emergencyContact: {
+  outstandingBalance: number;
+  phone: string;
+  email?: string;
+  idCard: string;
+  lineId?: string;
+  workplace?: string;
+  currentAddress?: string;
+  emergencyContact?: {
     name: string;
     relationship: string;
     phone: string;
   };
-  status: 'active' | 'inactive';
-  outstandingBalance?: number;
-  createdAt?: Date;
-  updatedAt?: Date;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  severity?: number;
 }
 
 export interface UtilityReading {
@@ -230,4 +243,47 @@ export interface LineNotifyConfig {
   };
   createdAt: Date;
   updatedAt: Date;
+}
+
+// เพิ่ม interface สำหรับข้อมูลที่ส่งไปยัง Client Component
+export interface SimplifiedDormitory {
+  id: string;
+  name: string;
+  config?: {
+    roomTypes?: {
+      [key: string]: {
+        id: string;
+        name: string;
+        basePrice: number;
+        isDefault: boolean;
+        airConditionerFee: number;
+        parkingFee: number;
+      };
+    };
+    additionalFees?: {
+      airConditioner: number | null;
+      parking: number | null;
+      floorRates: Record<string, number>;
+      utilities: {
+        water: {
+          perPerson: number | null;
+        };
+        electric: {
+          unit: number | null;
+        };
+      };
+    };
+  };
+}
+
+export interface MeterReading {
+  id: string;
+  roomId: string;
+  previousReading: number;
+  currentReading: number;
+  unitsUsed: number;
+  readingDate: string;
+  type: 'electric' | 'water';
+  createdAt: string;
+  updatedAt: string;
 } 
