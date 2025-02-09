@@ -2,6 +2,7 @@ export interface Bill {
   id: string;
   dormitoryId: string;
   roomNumber: string;
+  tenantId: string;
   tenantName: string;
   month: number;
   year: number;
@@ -86,16 +87,33 @@ export interface Payment {
   id: string;
   billId: string;
   dormitoryId: string;
-  tenantId: string;
   amount: number;
   method: 'cash' | 'transfer' | 'promptpay';
   status: 'pending' | 'completed' | 'failed';
-  reference?: string; // เลขอ้างอิงการโอน หรือ Transaction ID
-  evidence?: string; // URL รูปสลิป
+  reference?: string;
+  evidence?: string;
   paidAt: Date;
   createdAt: Date;
   updatedAt: Date;
-  processedBy?: string; // ID ของผู้ดูแลที่ดำเนินการ
 }
 
-export type PaymentMethod = 'cash' | 'transfer' | 'promptpay'; 
+export type PaymentMethod = 'cash' | 'transfer' | 'promptpay';
+
+// เพิ่ม interface สำหรับ response
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string | Error;
+}
+
+// เพิ่ม interface สำหรับ bill summary
+export interface BillSummary {
+  totalBills: number;
+  totalAmount: number;
+  paidBills: number;
+  paidAmount: number;
+  pendingBills: number;
+  pendingAmount: number;
+  overdueBills: number;
+  overdueAmount: number;
+} 

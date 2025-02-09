@@ -642,7 +642,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                     <td className="px-6 py-4">
                       <div className="text-sm space-y-1">
                         <div className="text-gray-900">
-                          <span className="font-medium">ค่าห้อง:</span> ฿{roomType?.basePrice.toLocaleString()}
+                          <span className="font-medium">ค่าห้อง:</span> ฿{roomType?.price?.toLocaleString() ?? 0}
                         </div>
                         {dormitoryConfig.additionalFees.floorRates[room.floor.toString()] && (
                           <div className={dormitoryConfig.additionalFees.floorRates[room.floor.toString()]! < 0 ? "text-red-500" : "text-green-600"}>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Room, RoomType } from "@/types/dormitory";
-import { updateRoom } from "@/lib/firebase/firebaseUtils";
+import { updateRoom, getRooms } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 
 interface EditRoomModalProps {
@@ -16,6 +16,7 @@ interface EditRoomModalProps {
 
 export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dormitoryId, totalFloors }: EditRoomModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [allRooms, setAllRooms] = useState<Room[]>([]);
   const [formData, setFormData] = useState({
     number: room.number,
     floor: room.floor,
@@ -26,8 +27,36 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
     initialMeterReading: room.initialMeterReading || 0,
   });
 
+  useEffect(() => {
+    const loadRooms = async () => {
+      try {
+        const result = await getRooms(dormitoryId);
+        if (result.success) {
+          const availableRooms = result.data.filter(r => 
+            r.id === room.id || r.status === 'available'
+          );
+          const sortedRooms = availableRooms.sort((a, b) => {
+            return a.number.localeCompare(b.number, undefined, { numeric: true });
+          });
+          setAllRooms(sortedRooms);
+        }
+      } catch (error) {
+        console.error('Error loading rooms:', error);
+        toast.error('ไม่สามารถโหลดข้อมูลห้องได้');
+      }
+    };
+
+    loadRooms();
+  }, [dormitoryId, room.id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const targetRoom = allRooms.find(r => r.number === formData.number);
+    if (targetRoom && targetRoom.id !== room.id && targetRoom.status === 'occupied') {
+      toast.error('ไม่สามารถแก้ไขเป็นห้องที่มีผู้เช่าอยู่แล้ว');
+      return;
+    }
 
     if (!formData.number.trim()) {
       toast.error("กรุณากรอกเลขห้อง");
@@ -82,14 +111,38 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
               <label className="block text-sm font-medium text-gray-700">
                 เลขห้อง <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                name="number"
+              <select
                 value={formData.number}
-                onChange={handleChange}
+                onChange={(e) => {
+                  const selectedRoom = allRooms.find(r => r.number === e.target.value);
+                  if (selectedRoom) {
+                    if (selectedRoom.id !== room.id && selectedRoom.status === 'occupied') {
+                      toast.error('ไม่สามารถเลือกห้องที่มีผู้เช่าอยู่แล้ว');
+                      return;
+                    }
+                    setFormData(prev => ({
+                      ...prev,
+                      number: selectedRoom.number,
+                      floor: selectedRoom.floor
+                    }));
+                  }
+                }}
+                required
                 className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
-                placeholder="เลขห้อง เช่น 101"
-              />
+              >
+                <option value="">เลือกห้อง</option>
+                {allRooms.map((r) => (
+                  <option 
+                    key={r.id} 
+                    value={r.number}
+                    disabled={r.id !== room.id && r.status === 'occupied'}
+                  >
+                    {r.number} - ชั้น {r.floor}
+                    {r.roomType && ` (${r.roomType})`}
+                    {r.id !== room.id && r.status === 'occupied' && ' - มีผู้เช่า'}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -99,7 +152,9 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
               <select
                 name="floor"
                 value={formData.floor}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setFormData({ ...formData, floor: parseInt(e.target.value) })
+                }
                 className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
               >
                 <option value="">เลือกชั้น</option>
@@ -122,8 +177,11 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
                 className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
               >
                 <option value="">เลือกประเภทห้อง</option>
-                <option value="standard">ห้องธรรมดา</option>
-                <option value="aircon">ห้องแอร์</option>
+                {roomTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name}: {type.basePrice?.toLocaleString() ?? 0} บาท/เดือน
+                  </option>
+                ))}
               </select>
             </div>
 

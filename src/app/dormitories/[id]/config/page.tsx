@@ -8,13 +8,16 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
 import { toast } from "sonner";
 import { RoomType } from "@/types/dormitory";
+import { getDormitory, updateDormitory } from '@/lib/firebase/firebaseUtils';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 
 interface Config {
   roomTypes: Record<string, RoomType>;
   additionalFees: {
     airConditioner: number | null;
     parking: number | null;
-    floorRates: Record<string, number | null>;
+    floorRates: Record<string, number>;
     utilities: {
       water: {
         perPerson: number | null;
@@ -24,6 +27,22 @@ interface Config {
       };
     };
   };
+}
+
+interface DormitoryData {
+  config: Config;
+  dueDate?: number;
+}
+
+// เพิ่ม interface สำหรับเงื่อนไขการออกบิล
+interface BillingConditions {
+  allowedDaysBeforeDueDate: number; // จำนวนวันก่อนถึงกำหนดที่สามารถออกบิลได้
+  requireMeterReading: boolean; // ต้องจดมิเตอร์ก่อนออกบิลหรือไม่
+  allowPartialBilling: boolean; // อนุญาตให้ออกบิลบางส่วนหรือไม่
+  minimumStayForBilling: number; // จำนวนวันขั้นต่ำที่ต้องพักก่อนออกบิล
+  gracePeriod: number; // ระยะเวลาผ่อนผันการชำระ (วัน)
+  lateFeeRate: number; // อัตราค่าปรับจ่ายช้า (%)
+  autoGenerateBill: boolean; // สร้างบิลอัตโนมัติเมื่อถึงกำหนด
 }
 
 export default function DormitoryConfigPage({ params }: { params: { id: string } }) {
@@ -48,6 +67,16 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         }
       }
     }
+  });
+  const [dueDate, setDueDate] = useState<number>(5); // default to 5th of month
+  const [billingConditions, setBillingConditions] = useState<BillingConditions>({
+    allowedDaysBeforeDueDate: 0,
+    requireMeterReading: false,
+    allowPartialBilling: false,
+    minimumStayForBilling: 0,
+    gracePeriod: 0,
+    lateFeeRate: 0,
+    autoGenerateBill: false,
   });
 
   // แปลง roomTypes object เป็น array
@@ -81,6 +110,16 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 }
               }
             },
+          });
+          setDueDate(data.dueDate || 5);
+          setBillingConditions(data.billingConditions || {
+            allowedDaysBeforeDueDate: 0,
+            requireMeterReading: false,
+            allowPartialBilling: false,
+            minimumStayForBilling: 0,
+            gracePeriod: 0,
+            lateFeeRate: 0,
+            autoGenerateBill: false,
           });
         }
       } catch (error) {
@@ -194,8 +233,13 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         return;
       }
 
-      const docRef = doc(db, "dormitories", params.id);
-      await updateDoc(docRef, { config });
+      const updateData: Partial<DormitoryData> = {
+        config,
+        dueDate,
+        billingConditions,
+      };
+
+      await updateDormitory(params.id, updateData);
       
       toast.success("บันทึกการตั้งค่าเรียบร้อย");
       router.push("/dormitories");
@@ -205,6 +249,13 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleBillingConditionChange = (field: keyof BillingConditions, value: any) => {
+    setBillingConditions(prev => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   if (isInitialLoading) {
@@ -527,6 +578,124 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           </div>
         </div>
       </div>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">
+          วันครบกำหนดชำระค่าเช่า (วันที่เท่าไหร่ของเดือน)
+        </label>
+        <input
+          type="number"
+          min="1"
+          max="31"
+          value={dueDate}
+          onChange={(e) => setDueDate(parseInt(e.target.value))}
+          className="w-full max-w-xs p-2 border rounded"
+        />
+      </div>
+
+      {/* เพิ่มส่วน UI สำหรับตั้งค่าเงื่อนไขการออกบิล */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>เงื่อนไขการออกบิล</CardTitle>
+          <CardDescription>
+            กำหนดเงื่อนไขและข้อกำหนดในการออกบิล
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">จำนวนวันที่สามารถออกบิลก่อนถึงกำหนด</label>
+                <p className="text-sm text-gray-500">กำหนดว่าสามารถออกบิลล่วงหน้าได้กี่วันก่อนถึงกำหนดชำระ</p>
+              </div>
+              <input
+                type="number"
+                value={billingConditions.allowedDaysBeforeDueDate}
+                onChange={(e) => handleBillingConditionChange('allowedDaysBeforeDueDate', parseInt(e.target.value))}
+                className="w-24 rounded-md border-gray-300"
+                min={0}
+                max={31}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">ต้องจดมิเตอร์ก่อนออกบิล</label>
+                <p className="text-sm text-gray-500">ต้องมีการจดมิเตอร์ในเดือนนั้นก่อนจึงจะออกบิลได้</p>
+              </div>
+              <Switch
+                checked={billingConditions.requireMeterReading}
+                onCheckedChange={(checked) => handleBillingConditionChange('requireMeterReading', checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">อนุญาตให้ออกบิลบางส่วน</label>
+                <p className="text-sm text-gray-500">สามารถออกบิลเฉพาะบางรายการได้</p>
+              </div>
+              <Switch
+                checked={billingConditions.allowPartialBilling}
+                onCheckedChange={(checked) => handleBillingConditionChange('allowPartialBilling', checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">จำนวนวันขั้นต่ำที่ต้องพัก</label>
+                <p className="text-sm text-gray-500">จำนวนวันขั้นต่ำที่ผู้เช่าต้องพักก่อนจึงจะออกบิลได้</p>
+              </div>
+              <input
+                type="number"
+                value={billingConditions.minimumStayForBilling}
+                onChange={(e) => handleBillingConditionChange('minimumStayForBilling', parseInt(e.target.value))}
+                className="w-24 rounded-md border-gray-300"
+                min={0}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">ระยะเวลาผ่อนผันการชำระ (วัน)</label>
+                <p className="text-sm text-gray-500">จำนวนวันที่อนุญาตให้จ่ายช้าได้โดยไม่มีค่าปรับ</p>
+              </div>
+              <input
+                type="number"
+                value={billingConditions.gracePeriod}
+                onChange={(e) => handleBillingConditionChange('gracePeriod', parseInt(e.target.value))}
+                className="w-24 rounded-md border-gray-300"
+                min={0}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">อัตราค่าปรับจ่ายช้า (%)</label>
+                <p className="text-sm text-gray-500">เปอร์เซ็นต์ค่าปรับเมื่อชำระเกินกำหนด</p>
+              </div>
+              <input
+                type="number"
+                value={billingConditions.lateFeeRate}
+                onChange={(e) => handleBillingConditionChange('lateFeeRate', parseFloat(e.target.value))}
+                className="w-24 rounded-md border-gray-300"
+                min={0}
+                step={0.1}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">สร้างบิลอัตโนมัติ</label>
+                <p className="text-sm text-gray-500">สร้างบิลโดยอัตโนมัติเมื่อถึงกำหนด</p>
+              </div>
+              <Switch
+                checked={billingConditions.autoGenerateBill}
+                onCheckedChange={(checked) => handleBillingConditionChange('autoGenerateBill', checked)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 } 

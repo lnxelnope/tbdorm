@@ -1,4 +1,4 @@
-import { Bill, LineNotifyConfig } from "@/types/dormitory";
+import { Bill, LineNotifyConfig, Payment } from "@/types/dormitory";
 
 const sendNotification = async (accessToken: string, message: string) => {
   try {
@@ -102,6 +102,24 @@ export const sendUtilityReadingNotification = async (
   const message = `\nบันทึกค่ามิเตอร์ 📊\nห้อง: ${roomId}\nประเภท: ${
     type === "water" ? "น้ำประปา" : "ไฟฟ้า"
   }\nค่าเก่า: ${previousReading}\nค่าใหม่: ${currentReading}\nหน่วยที่ใช้: ${units} หน่วย`;
+
+  return sendNotification(config.accessToken, message);
+};
+
+export const sendPaymentNotification = async (
+  config: LineNotifyConfig,
+  bill: Bill,
+  payment: Payment
+) => {
+  if (!config.isActive) return;
+
+  const message = `
+🏠 ${bill.dormitoryName}
+ห้อง ${bill.roomNumber} ชำระเงินแล้ว
+💰 จำนวน: ${payment.amount.toLocaleString()} บาท
+📅 วันที่: ${new Date(payment.paidAt).toLocaleDateString('th-TH')}
+💳 ช่องทาง: ${getPaymentMethodText(payment.method)}
+`;
 
   return sendNotification(config.accessToken, message);
 }; 

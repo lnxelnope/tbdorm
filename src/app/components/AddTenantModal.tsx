@@ -1,10 +1,39 @@
 import { Dialog, Transition } from '@headlessui/react'
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { X } from 'lucide-react'
+import { getLatestMeterReading } from "@/lib/firebase/firebaseUtils"
 
-export default function AddTenantModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export default function AddTenantModal({ 
+  isOpen, 
+  onClose,
+  dormitoryId,
+  roomId
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  dormitoryId: string;
+  roomId: string;
+}) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [initialMeterReading, setInitialMeterReading] = useState<number>(0)
   console.log('Modal rendered, isOpen:', isOpen)
+
+  useEffect(() => {
+    const loadMeterReading = async () => {
+      if (!dormitoryId || !roomId) return;
+
+      try {
+        const result = await getLatestMeterReading(dormitoryId, roomId, 'electric');
+        if (result.success && result.data) {
+          setInitialMeterReading(result.data.currentReading);
+        }
+      } catch (error) {
+        console.error('Error loading meter reading:', error);
+      }
+    };
+
+    loadMeterReading();
+  }, [dormitoryId, roomId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

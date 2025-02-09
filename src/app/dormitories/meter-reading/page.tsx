@@ -1,12 +1,14 @@
- "use client";
+"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { queryDormitories, getRooms, saveMeterReading, getLatestMeterReading, queryTenants } from "@/lib/firebase/firebaseUtils";
 import { Dormitory, Room, MeterReading } from "@/types/dormitory";
 import { toast } from "sonner";
 import { Plus, Search, Loader2, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useRouter, useSearchParams } from "next/navigation";
+import debounce from 'lodash/debounce';
 
 // เพิ่ม interface สำหรับการเรียงข้อมูล
 interface SortConfig {
@@ -14,18 +16,130 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
+interface BillValidation {
+  canGenerate: boolean;
+  message?: string;
+}
+
+// เพิ่ม interface สำหรับเก็บข้อมูลมิเตอร์
+interface MeterData {
+  currentReading: number;
+  previousReading: number;
+  unitsUsed: number;
+  readingDate: string;
+}
+
+const canGenerateBill = (
+  room: Room,
+  previousReading: number,
+  currentReading: number
+): BillValidation => {
+  // 1. ตรวจสอบค่ามิเตอร์
+  if (currentReading <= previousReading) {
+    return {
+      canGenerate: false,
+      message: "ค่ามิเตอร์ปัจจุบันต้องมากกว่าครั้งก่อน"
+    };
+  }
+
+  // 2. ตรวจสอบสถานะห้อง
+  if (!room.tenantId) {
+    return {
+      canGenerate: false,
+      message: "ไม่มีผู้เช่าในห้องนี้"
+    };
+  }
+
+  if (room.status === 'moving_out') {
+    return {
+      canGenerate: false,
+      message: "ห้องอยู่ในสถานะแจ้งย้ายออก"
+    };
+  }
+
+  // ผ่านทุกเงื่อนไข
+  return {
+    canGenerate: true
+  };
+};
+
+interface MeterReadingRowProps {
+  roomNumber: string;
+  previousReading: number;
+  unitsUsed?: number;
+  onSave: (currentReading: number) => void;
+}
+
+function MeterReadingRow({ roomNumber, previousReading, unitsUsed, onSave }: MeterReadingRowProps) {
+  const [currentReading, setCurrentReading] = useState<string>('');
+  
+  return (
+    <div className="flex items-center gap-4 py-2 border-b">
+      <div className="w-32">
+        <label className="block text-sm font-medium text-gray-700">
+          {roomNumber}
+        </label>
+      </div>
+
+      <div className="w-32">
+        <label className="block text-sm text-gray-600">
+          {previousReading}
+        </label>
+      </div>
+
+      <div className="w-32">
+        <input
+          type="number"
+          value={currentReading}
+          onChange={(e) => setCurrentReading(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          placeholder="ค่ามิเตอร์ปัจจุบัน"
+        />
+      </div>
+
+      {/* ถ้ามี unitsUsed แล้วให้แสดงปุ่มแก้ไข ถ้าไม่มีให้แสดงปุ่มบันทึก */}
+      {unitsUsed ? (
+        <button
+          onClick={() => onSave(Number(currentReading))}
+          className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+        >
+          แก้ไข
+        </button>
+      ) : (
+        <button
+          onClick={() => onSave(Number(currentReading))}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          บันทึก
+        </button>
+      )}
+
+      {/* แสดงจำนวนหน่วยที่ใช้ถ้ามีข้อมูล */}
+      {unitsUsed && (
+        <div className="w-32 text-right">
+          <span className="text-sm text-gray-600">{unitsUsed}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MeterReadingPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
   const [selectedDormitory, setSelectedDormitory] = useState<string>("");
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
   
-  // ค่ามิเตอร์
-  const [meterReadings, setMeterReadings] = useState<Record<string, number>>({});
-  const [previousReadings, setPreviousReadings] = useState<Record<string, number>>({});
+  // เพิ่ม state สำหรับ errors และ savingRoom
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savingRoom, setSavingRoom] = useState<string | null>(null);
+  
+  // เพิ่ม interface สำหรับเก็บข้อมูลมิเตอร์
+  const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
 
   // เพิ่ม state สำหรับการเรียงข้อมูล
   const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -35,6 +149,24 @@ export default function MeterReadingPage() {
 
   // เพิ่ม state สำหรับเก็บข้อมูลผู้เช่า
   const [tenants, setTenants] = useState<Record<string, string>>({});  // roomNumber -> tenantName
+
+  // สร้าง debounced function
+  const debouncedSearch = useCallback(
+    debounce((term: string) => {
+      setDebouncedSearchTerm(term);
+      // อัพเดท URL
+      const params = new URLSearchParams(searchParams);
+      params.set('search', term);
+      router.replace(`/dormitories/meter-reading?${params.toString()}`);
+    }, 500), // รอ 500ms หลังจากพิมพ์เสร็จ
+    [searchParams, router]
+  );
+
+  // เมื่อ searchTerm เปลี่ยน
+  useEffect(() => {
+    debouncedSearch(searchTerm);
+    return () => debouncedSearch.cancel();
+  }, [searchTerm, debouncedSearch]);
 
   // โหลดข้อมูลหอพัก
   useEffect(() => {
@@ -69,14 +201,21 @@ export default function MeterReadingPage() {
         ]);
 
         if (roomsResult.success) {
-          // เรียงลำดับห้องตามเลขห้อง
           const sortedRooms = roomsResult.data.sort((a, b) => {
             const roomA = parseInt(a.number.replace(/\D/g, ''));
             const roomB = parseInt(b.number.replace(/\D/g, ''));
             return roomA - roomB;
           });
           
-          setRooms(sortedRooms);
+          // กรองห้องตาม debouncedSearchTerm
+          const filteredRooms = debouncedSearchTerm 
+            ? sortedRooms.filter(room => 
+                room.number.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+                (room.tenantName && room.tenantName.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
+              )
+            : sortedRooms;
+          
+          setRooms(filteredRooms);
 
           // สร้าง map ของผู้เช่า
           if (tenantsResult.success) {
@@ -88,23 +227,28 @@ export default function MeterReadingPage() {
           }
           
           // โหลดค่ามิเตอร์ล่าสุดของแต่ละห้อง
-          const readings: Record<string, number> = {};
-          const prevReadings: Record<string, number> = {};
+          const meterDataMap: Record<string, MeterData> = {};
           
-          for (const room of sortedRooms) {
-            const meterResult = await getLatestMeterReading(selectedDormitory, room.id, 'electric');
+          for (const room of filteredRooms) {
+            const meterResult = await getLatestMeterReading(selectedDormitory, room.number, 'electric');
             if (meterResult.success && meterResult.data) {
-              readings[room.id] = meterResult.data.currentReading;
-              prevReadings[room.id] = meterResult.data.previousReading;
+              meterDataMap[room.id] = {
+                currentReading: meterResult.data.currentReading,
+                previousReading: meterResult.data.previousReading,
+                unitsUsed: meterResult.data.unitsUsed,
+                readingDate: meterResult.data.readingDate
+              };
             } else {
-              // ถ้าไม่มีค่ามิเตอร์ล่าสุด ใช้ค่าเริ่มต้นจากห้อง
-              readings[room.id] = room.initialMeterReading || 0;
-              prevReadings[room.id] = room.initialMeterReading || 0;
+              meterDataMap[room.id] = {
+                currentReading: room.initialMeterReading || 0,
+                previousReading: room.initialMeterReading || 0,
+                unitsUsed: 0,
+                readingDate: new Date().toISOString()
+              };
             }
           }
           
-          setMeterReadings(readings);
-          setPreviousReadings(prevReadings);
+          setMeterData(meterDataMap);
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -115,16 +259,7 @@ export default function MeterReadingPage() {
     };
     
     loadRooms();
-  }, [selectedDormitory]);
-
-  // กรองห้องตามการค้นหา
-  const filteredRooms = rooms.filter(room => {
-    if (!searchQuery) return true;
-    return (
-      room.number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (room.tenantName && room.tenantName.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  });
+  }, [selectedDormitory, debouncedSearchTerm]);
 
   // ฟังก์ชันสำหรับเรียงข้อมูล
   const handleSort = (key: SortConfig['key']) => {
@@ -141,7 +276,7 @@ export default function MeterReadingPage() {
   };
 
   // เรียงข้อมูลตาม sortConfig
-  const sortedRooms = [...filteredRooms].sort((a, b) => {
+  const sortedRooms = [...rooms].sort((a, b) => {
     const direction = sortConfig.direction === 'asc' ? 1 : -1;
     
     switch (sortConfig.key) {
@@ -161,18 +296,18 @@ export default function MeterReadingPage() {
         return nameA.localeCompare(nameB) * direction;
       
       case 'previousReading':
-        const prevA = previousReadings[a.id] || 0;
-        const prevB = previousReadings[b.id] || 0;
+        const prevA = meterData[a.id]?.previousReading || 0;
+        const prevB = meterData[b.id]?.previousReading || 0;
         return (prevA - prevB) * direction;
       
       case 'currentReading':
-        const currA = meterReadings[a.id] || 0;
-        const currB = meterReadings[b.id] || 0;
+        const currA = meterData[a.id]?.currentReading || 0;
+        const currB = meterData[b.id]?.currentReading || 0;
         return (currA - currB) * direction;
       
       case 'unitsUsed':
-        const unitsA = (meterReadings[a.id] || 0) - (previousReadings[a.id] || 0);
-        const unitsB = (meterReadings[b.id] || 0) - (previousReadings[b.id] || 0);
+        const unitsA = (meterData[a.id]?.unitsUsed || 0) - (meterData[a.id]?.previousReading || 0);
+        const unitsB = (meterData[b.id]?.unitsUsed || 0) - (meterData[b.id]?.previousReading || 0);
         return (unitsA - unitsB) * direction;
       
       default:
@@ -185,21 +320,38 @@ export default function MeterReadingPage() {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
-    const previousReading = previousReadings[roomId] || 0;
+    const previousReading = meterData[roomId]?.previousReading || 0;
     
     try {
       setSavingRoom(room.number);
       
-      const result = await saveMeterReading(selectedDormitory, {
+      // คำนวณ unitsUsed ก่อนบันทึก
+      const unitsUsed = currentReading - previousReading;
+
+      // ตรวจสอบค่าที่จะบันทึก
+      console.log('Saving meter reading:', {
         roomId,
+        roomNumber: room.number,
         previousReading,
         currentReading,
+        unitsUsed,
+        readingDate: new Date().toISOString()
+      });
+      
+      const result = await saveMeterReading(selectedDormitory, {
+        roomId,
+        roomNumber: room.number,
+        previousReading,
+        currentReading,
+        unitsUsed, // ส่ง unitsUsed ไปด้วย
         readingDate: new Date().toISOString(),
         type: 'electric'
       });
 
       if (result.success) {
-        setMeterReadings(prev => ({ ...prev, [roomId]: currentReading }));
+        // !!! IMPORTANT: ห้ามอัพเดท previousReadings ตรงนี้ !!!
+        // เพราะจะทำให้ค่า unitsUsed เป็น 0 เสมอ (currentReading - previousReading = 0)
+        setMeterData(prev => ({ ...prev, [roomId]: { ...prev[roomId], currentReading, unitsUsed } }));
         toast.success(`บันทึกค่ามิเตอร์ห้อง ${room.number} เรียบร้อย`);
       } else {
         setErrors(prev => ({ ...prev, [roomId]: result.error || 'เกิดข้อผิดพลาดในการบันทึก' }));
@@ -224,6 +376,23 @@ export default function MeterReadingPage() {
     }
   };
 
+  // ตัวอย่างการใช้งาน
+  const handleGenerateBill = (room: Room) => {
+    const validation = canGenerateBill(
+      room,
+      meterData[room.id]?.previousReading || 0,
+      meterData[room.id]?.currentReading || 0
+    );
+
+    if (!validation.canGenerate) {
+      toast.error(validation.message);
+      return;
+    }
+
+    // ดำเนินการสร้างบิล
+    // ...
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -243,6 +412,18 @@ export default function MeterReadingPage() {
             <div>
               <CardTitle>จดมิเตอร์ไฟ</CardTitle>
               <CardDescription>บันทึกค่ามิเตอร์ไฟฟ้าของแต่ละห้อง</CardDescription>
+            </div>
+            <div className="w-72">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาตามเลขห้อง"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full rounded-md border border-gray-300 py-2 text-sm"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -266,24 +447,6 @@ export default function MeterReadingPage() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="flex-1">
-                <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
-                  ค้นหา
-                </label>
-                <div className="relative rounded-md shadow-sm">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <Search className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    id="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="block w-full rounded-md border-gray-300 pl-10 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    placeholder="ค้นหาด้วยเลขห้อง หรือชื่อผู้เช่า"
-                  />
-                </div>
               </div>
             </div>
 
@@ -330,16 +493,15 @@ export default function MeterReadingPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {sortedRooms.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                        ไม่พบข้อมูล
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedRooms.map((room, index) => {
-                      const previousReading = previousReadings[room.id] || 0;
-                      const currentReading = meterReadings[room.id] || '';
+                  {sortedRooms
+                    .filter(room => 
+                      room.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (room.tenantName && room.tenantName.toLowerCase().includes(searchTerm.toLowerCase()))
+                    )
+                    .map((room, index) => {
+                      const meter = meterData[room.id];
+                      const previousReading = meter?.previousReading || 0;
+                      const currentReading = meter?.currentReading || '';
                       const unitsUsed = currentReading ? parseFloat(currentReading.toString()) - previousReading : 0;
                       const dormitory = dormitories.find(d => d.id === room.dormitoryId);
 
@@ -358,45 +520,84 @@ export default function MeterReadingPage() {
                             {previousReading}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="relative space-y-1">
-                              <input
-                                type="number"
-                                value={currentReading}
-                                onChange={(e) => setMeterReadings(prev => ({
-                                  ...prev,
-                                  [room.id]: parseFloat(e.target.value)
-                                }))}
-                                onKeyDown={(e) => handleKeyDown(e, index)}
-                                onBlur={(e) => {
-                                  if (e.target.value) {
-                                    handleSave(room.id, parseFloat(e.target.value));
+                            <div className="flex items-center space-x-2">
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={currentReading}
+                                  onChange={(e) => {
+                                    const value = parseFloat(e.target.value);
+                                    setMeterData(prev => ({
+                                      ...prev,
+                                      [room.id]: {
+                                        ...prev[room.id],
+                                        currentReading: value,
+                                        unitsUsed: value - (prev[room.id]?.previousReading || 0)
+                                      }
+                                    }));
+                                  }}
+                                  onKeyDown={(e) => handleKeyDown(e, index)}
+                                  min={previousReading}
+                                  className={cn(
+                                    "block w-32 rounded-md border shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 transition-colors",
+                                    errors[room.id] ? "border-red-500 bg-red-50" : "border-gray-300"
+                                  )}
+                                  placeholder="กรอกค่ามิเตอร์"
+                                  disabled={savingRoom === room.number}
+                                />
+                                {savingRoom === room.number && (
+                                  <div className="absolute right-2 top-2.5">
+                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                  </div>
+                                )}
+                                {errors[room.id] && (
+                                  <p className="text-xs text-red-500">{errors[room.id]}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  if (currentReading) {
+                                    handleSave(room.id, parseFloat(currentReading.toString()));
                                   }
                                 }}
-                                min={previousReading}
+                                disabled={savingRoom === room.number || !currentReading}
                                 className={cn(
-                                  "block w-32 rounded-md border shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 transition-colors",
-                                  errors[room.id] ? "border-red-500 bg-red-50" : "border-gray-300"
+                                  "px-3 py-2 rounded-md text-sm font-medium flex items-center",
+                                  currentReading && !savingRoom
+                                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
                                 )}
-                                placeholder="กรอกค่ามิเตอร์"
-                                disabled={savingRoom === room.number}
-                              />
-                              {savingRoom === room.number && (
-                                <div className="absolute right-2 top-2.5">
-                                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                                </div>
-                              )}
-                              {errors[room.id] && (
-                                <p className="text-xs text-red-500">{errors[room.id]}</p>
-                              )}
+                              >
+                                {savingRoom === room.number ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Save className="h-4 w-4" />
+                                )}
+                                <span className="ml-1">บันทึก</span>
+                              </button>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {unitsUsed > 0 ? unitsUsed.toFixed(2) : '-'}
+                            {previousReading}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm">
+                              <span className={cn(
+                                "font-medium",
+                                meter?.unitsUsed > 0 ? "text-blue-600" : "text-gray-500"
+                              )}>
+                                {meter?.unitsUsed > 0 ? meter.unitsUsed.toFixed(2) : '-'}
+                              </span>
+                              {meter?.readingDate && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  บันทึกเมื่อ: {new Date(meter.readingDate).toLocaleDateString('th-TH')}
+                                </p>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
-                    })
-                  )}
+                    })}
                 </tbody>
               </table>
             </div>

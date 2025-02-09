@@ -73,8 +73,8 @@ export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: Si
         },
         {
           name: "บิลหอพัก",
-          href: "/bills",
-          current: pathname?.includes('/bills'),
+          href: "/dormitories/bills",
+          current: pathname?.includes('/dormitories/bills'),
           icon: FileText
         },
         {

@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface PromptPayConfig {
   promptPayId: string;
@@ -67,5 +67,51 @@ export const getPaymentConfig = async () => {
       success: false,
       error: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
     };
+  }
+};
+
+export const saveBankAccount = async (dormitoryId: string, data: Omit<BankAccount, 'id'>) => {
+  try {
+    const bankAccountRef = collection(db, `dormitories/${dormitoryId}/bankAccounts`);
+    const docRef = await addDoc(bankAccountRef, { // เพิ่ม addDoc เพื่อให้ generate ID อัตโนมัติ
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    return { 
+      success: true, 
+      id: docRef.id,
+      data: {
+        id: docRef.id,
+        ...data
+      }
+    };
+  } catch (error) {
+    console.error('Error saving bank account:', error);
+    return { success: false, error };
+  }
+};
+
+export const savePromptPayConfig = async (dormitoryId: string, data: Omit<PromptPayConfig, 'id'>) => {
+  try {
+    const promptPayRef = collection(db, `dormitories/${dormitoryId}/promptPay`);
+    const docRef = await addDoc(promptPayRef, { // เพิ่ม addDoc เพื่อให้ generate ID อัตโนมัติ
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    return { 
+      success: true, 
+      id: docRef.id,
+      data: {
+        id: docRef.id,
+        ...data
+      }
+    };
+  } catch (error) {
+    console.error('Error saving PromptPay config:', error);
+    return { success: false, error };
   }
 }; 

@@ -8,6 +8,7 @@ import { getBills, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
+import BankAccountConfig from "../../bills/components/BankAccountConfig";
 
 export default function BillingPage({ params }: { params: { id: string } }) {
   const [isLoading, setIsLoading] = useState(true);

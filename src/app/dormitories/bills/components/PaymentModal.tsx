@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { toast } from 'sonner';
-import { updateBillStatus, createPaymentReceipt, getBankAccounts } from '@/lib/firebase/billUtils';
-import { Bill, BankAccount } from '@/types/bill';
+import { updateBillStatus, createPaymentReceipt, getBankAccounts, addPayment } from '@/lib/firebase/billUtils';
+import { Bill, BankAccount, Payment } from '@/types/bill';
 import Image from 'next/image';
 import { X } from 'lucide-react';
+import { uploadPaymentEvidence } from '@/lib/firebase/storage';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -44,34 +45,49 @@ export default function PaymentModal({
     setIsSubmitting(true);
 
     try {
-      const newPaidAmount = bill.paidAmount + amount;
-      const newStatus = newPaidAmount >= bill.totalAmount ? 'paid' : 'partially_paid';
+      let evidenceUrl = '';
+      if (paymentProof) {
+        const uploadResult = await uploadPaymentEvidence(
+          dormitoryId,
+          bill.id,
+          paymentProof
+        );
+        if (uploadResult.success) {
+          evidenceUrl = uploadResult.url;
+        }
+      }
 
-      const payment = {
-        id: `${bill.id}_${Date.now()}`,
+      const payment: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'> = {
         billId: bill.id,
         dormitoryId,
-        tenantId: '',
         amount,
         method: paymentMethod,
         status: 'completed',
-        paidAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date()
+        reference,
+        evidence: evidenceUrl,
+        paidAt: new Date(transferDate || new Date())
       };
 
-      const result = await updateBillStatus(bill.id, newStatus, {
+      const paymentResult = await addPayment(dormitoryId, payment);
+      if (!paymentResult.success) {
+        throw new Error('Failed to add payment');
+      }
+
+      const newPaidAmount = bill.paidAmount + amount;
+      const newStatus = newPaidAmount >= bill.totalAmount ? 'paid' : 'partially_paid';
+
+      const updateResult = await updateBillStatus(dormitoryId, bill.id, {
+        status: newStatus,
         paidAmount: newPaidAmount,
-        remainingAmount: bill.totalAmount - newPaidAmount,
-        payments: [...bill.payments, payment]
+        remainingAmount: bill.totalAmount - newPaidAmount
       });
 
-      if (result.success) {
+      if (updateResult.success) {
         toast.success('บันทึกการชำระเงินเรียบร้อยแล้ว');
         onPaymentComplete();
         onClose();
       } else {
-        toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกการชำระเงิน');
+        throw new Error('Failed to update bill status');
       }
     } catch (error) {
       console.error('Error processing payment:', error);

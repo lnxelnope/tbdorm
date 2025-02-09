@@ -1,25 +1,21 @@
 import { useState } from "react";
 import { X } from "lucide-react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
+import { toast } from "sonner";
 
 interface AddDormitoryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: {
-    name: string;
-    address: string;
-    promptpayNumber: string;
-    waterRate: number;
-    electricityRate: number;
-    lateFee: number;
-    paymentDueDay: number;
-  }) => void;
+  onSuccess: () => void;
 }
 
 export default function AddDormitoryModal({
   isOpen,
   onClose,
-  onSubmit,
+  onSuccess,
 }: AddDormitoryModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     address: "",
@@ -30,10 +26,46 @@ export default function AddDormitoryModal({
     paymentDueDay: 1,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      // สร้าง document ใหม่ใน collection dormitories
+      const docRef = await addDoc(collection(db, 'dormitories'), {
+        ...formData,
+        status: 'active',
+        config: {
+          roomTypes: {},
+          additionalFees: {
+            airConditioner: null,
+            parking: null,
+            floorRates: {},
+            utilities: {
+              water: {
+                perPerson: formData.waterRate
+              },
+              electric: {
+                unit: formData.electricityRate
+              }
+            }
+          }
+        },
+        facilities: [],
+        images: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      toast.success('เพิ่มหอพักเรียบร้อยแล้ว');
+      onSuccess();
+      onClose();
+    } catch (error) {
+      console.error('Error adding dormitory:', error);
+      toast.error('เกิดข้อผิดพลาดในการเพิ่มหอพัก');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { updateTenant } from "@/lib/firebase/firebaseUtils";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
+import { getRooms } from "@/lib/firebase/firebaseUtils";
 
 interface EditTenantModalProps {
   isOpen: boolean;
@@ -47,6 +48,7 @@ export default function EditTenantModal({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [allRooms, setAllRooms] = useState<Room[]>([]);
 
   useEffect(() => {
     // อัพเดทข้อมูลในฟอร์มเมื่อ tenant เปลี่ยน
@@ -85,6 +87,33 @@ export default function EditTenantModal({
   useEffect(() => {
     loadWorkplaces();
   }, []);
+
+  useEffect(() => {
+    const loadRooms = async () => {
+      if (!formData.dormitoryId) {
+        setAllRooms([]);
+        return;
+      }
+
+      try {
+        const result = await getRooms(formData.dormitoryId);
+        if (result.success) {
+          const availableRooms = result.data.filter(room => 
+            room.status === 'available' || room.number === formData.roomNumber
+          );
+          const sortedRooms = availableRooms.sort((a, b) => {
+            return a.number.localeCompare(b.number, undefined, { numeric: true });
+          });
+          setAllRooms(sortedRooms);
+        }
+      } catch (error) {
+        console.error('Error loading rooms:', error);
+        toast.error('ไม่สามารถโหลดข้อมูลห้องได้');
+      }
+    };
+
+    loadRooms();
+  }, [formData.dormitoryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,15 +296,32 @@ export default function EditTenantModal({
                   <label className="block text-sm font-medium text-gray-700">
                     เลขห้อง <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.roomNumber}
-                    onChange={(e) =>
-                      setFormData({ ...formData, roomNumber: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const selectedRoom = allRooms.find(room => room.number === e.target.value);
+                      setFormData({
+                        ...formData,
+                        roomNumber: e.target.value,
+                        roomId: selectedRoom?.id || ''
+                      });
+                    }}
                     required
                     className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                  />
+                  >
+                    <option value="">เลือกห้อง</option>
+                    {allRooms.map((room) => (
+                      <option 
+                        key={room.id} 
+                        value={room.number}
+                        disabled={room.status === 'occupied' && room.number !== formData.roomNumber}
+                      >
+                        {room.number} - ชั้น {room.floor}
+                        {room.roomType && ` (${room.roomType})`}
+                        {room.status === 'occupied' && room.number !== formData.roomNumber && ' - ไม่ว่าง'}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">

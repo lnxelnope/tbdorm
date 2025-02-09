@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Room, RoomType } from "@/types/dormitory";
-import { addRoom } from "@/lib/firebase/firebaseUtils";
+import { addRoom, getInitialMeterReading, getRooms } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
@@ -82,6 +82,9 @@ export default function AddRoomModal({
     initialMeterReading: "0",
   });
   
+  // เพิ่ม state สำหรับเก็บห้องที่มีอยู่แล้ว
+  const [existingRooms, setExistingRooms] = useState<Room[]>([]);
+  
   // ถ้าไม่มีรูปแบบห้องให้แจ้งเตือน
   useEffect(() => {
     if (!Array.isArray(roomTypes) || roomTypes.length === 0) {
@@ -101,9 +104,47 @@ export default function AddRoomModal({
     }
   }, [defaultRoomType]);
   
+  // เพิ่ม useEffect เพื่อดึงค่ามิเตอร์เริ่มต้น
+  useEffect(() => {
+    const fetchInitialMeterReading = async () => {
+      const reading = await getInitialMeterReading(dormitoryId);
+      setFormData(prev => ({
+        ...prev,
+        initialMeterReading: reading.toString()
+      }));
+    };
+
+    if (isOpen) {
+      fetchInitialMeterReading();
+    }
+  }, [dormitoryId, isOpen]);
+  
+  // โหลดข้อมูลห้องที่มีอยู่แล้ว
+  useEffect(() => {
+    const loadExistingRooms = async () => {
+      try {
+        const result = await getRooms(dormitoryId);
+        if (result.success) {
+          setExistingRooms(result.data);
+        }
+      } catch (error) {
+        console.error('Error loading existing rooms:', error);
+      }
+    };
+
+    loadExistingRooms();
+  }, [dormitoryId]);
+  
   if (!defaultRoomType) {
     return null;
   }
+
+  // ตรวจสอบว่าเลขห้องซ้ำหรือไม่
+  const isRoomNumberTaken = (number: string) => {
+    return existingRooms.some(room => 
+      room.number === number && room.status === 'occupied'
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,8 +163,6 @@ export default function AddRoomModal({
         return;
       }
 
-      setProgress({ current: 0, total: roomNumbers.length });
-
       // ตรวจสอบว่ามีเลขห้องซ้ำกันในการสร้างครั้งนี้หรือไม่
       const uniqueNumbers = new Set(roomNumbers);
       if (uniqueNumbers.size !== roomNumbers.length) {
@@ -132,14 +171,9 @@ export default function AddRoomModal({
         return;
       }
 
-      // ดึงข้อมูลห้องที่มีอยู่แล้วทั้งหมด
-      const existingRoomsSnapshot = await getDocs(collection(db, `dormitories/${dormitoryId}/rooms`));
-      const existingRoomNumbers = existingRoomsSnapshot.docs.map(doc => doc.data().number);
-
-      // ตรวจสอบว่ามีเลขห้องซ้ำกับที่มีอยู่แล้วหรือไม่
-      const duplicateNumbers = roomNumbers.filter(number => existingRoomNumbers.includes(number));
-      if (duplicateNumbers.length > 0) {
-        toast.error(`เลขห้องต่อไปนี้มีอยู่แล้ว: ${duplicateNumbers.join(", ")}`);
+      // ตรวจสอบเลขห้องซ้ำ
+      if (isRoomNumberTaken(roomNumbers[0])) {
+        toast.error('เลขห้องนี้มีผู้เช่าอยู่แล้ว');
         setIsSubmitting(false);
         return;
       }
@@ -223,12 +257,19 @@ export default function AddRoomModal({
               type="text"
               name="numbers"
               value={formData.numbers}
-              onChange={(e) => setFormData({ ...formData, numbers: e.target.value })}
-              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-3 bg-white hover:bg-gray-50 transition-colors text-base"
-              placeholder="เช่น 101-110 หรือ 101,102,103"
+              onChange={(e) => {
+                const value = e.target.value;
+                if (isRoomNumberTaken(value)) {
+                  toast.error('เลขห้องนี้มีผู้เช่าอยู่แล้ว');
+                  return;
+                }
+                setFormData({ ...formData, numbers: value });
+              }}
+              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5"
+              placeholder="เช่น 101-105, 201, 203"
             />
-            <p className="mt-2 text-sm text-gray-500">
-              สามารถระบุเป็นช่วงได้ เช่น 101-110 หรือระบุทีละห้อง เช่น 101,102,103
+            <p className="mt-1 text-sm text-gray-500">
+              สามารถระบุเป็นช่วงได้ เช่น 101-105 หรือระบุทีละห้องได้ เช่น 201, 203
             </p>
           </div>
 
@@ -245,7 +286,7 @@ export default function AddRoomModal({
               className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
             >
               <option value="">เลือกชั้น</option>
-              {[1, 2, 3, 4, 5].map((floor) => (
+              {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
                 <option key={floor} value={floor}>
                   ชั้น {floor}
                 </option>
@@ -266,8 +307,11 @@ export default function AddRoomModal({
               className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
             >
               <option value="">เลือกประเภทห้อง</option>
-              <option value="standard">ห้องธรรมดา</option>
-              <option value="aircon">ห้องแอร์</option>
+              {roomTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}: {type.basePrice?.toLocaleString() ?? 0} บาท/เดือน
+                </option>
+              ))}
             </select>
           </div>
 

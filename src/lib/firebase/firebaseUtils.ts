@@ -26,9 +26,10 @@ import {
 } from "firebase/firestore";
 import type { Dormitory, Room, RoomType, Tenant, UtilityReading, Bill, Payment, PromptPayConfig, LineNotifyConfig } from '@/types/dormitory';
 
-// Collection names
-export const COLLECTIONS = {
+// Constants
+const COLLECTIONS = {
   DORMITORIES: 'dormitories',
+  METER_READINGS: 'meter_readings', // กำหนดชื่อ collection ให้ชัดเจน
   ROOMS: 'rooms',
   TENANTS: 'tenants',
 };
@@ -274,35 +275,37 @@ export const getDormitoryStats = async (dormitoryId: string) => {
 };
 
 // Room functions
-export const addRoom = async (dormitoryId: string, data: Omit<Room, 'id'>) => {
+export const addRoom = async (dormitoryId: string, data: Omit<Room, "id">) => {
   try {
+    // ตรวจสอบว่าเลขห้องไม่ซ้ำ
     const roomsRef = collection(db, `dormitories/${dormitoryId}/rooms`);
-    const roomDoc = await addDoc(roomsRef, {
+    const q = query(roomsRef, where('number', '==', data.number));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      return { 
+        success: false, 
+        error: 'เลขห้องนี้มีอยู่แล้ว' 
+      };
+    }
+
+    // สร้างห้องใหม่
+    const docRef = await addDoc(roomsRef, {
       ...data,
-      createdAt: Timestamp.fromDate(new Date()),
-      updatedAt: Timestamp.fromDate(new Date()),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
 
-    // เพิ่มค่ามิเตอร์เริ่มต้น
-    const readingsRef = collection(db, `dormitories/${dormitoryId}/utility-readings`);
-    await addDoc(readingsRef, {
-      roomId: roomDoc.id,
-      dormitoryId,
-      type: "electric",
-      previousReading: data.initialMeterReading || 0,
-      currentReading: data.initialMeterReading || 0,
-      readingDate: Timestamp.fromDate(new Date()),
-      units: 0,
-      createdAt: Timestamp.fromDate(new Date()),
-      createdBy: "admin"
-    });
-
-    return {
-      success: true,
-      id: roomDoc.id,
+    return { 
+      success: true, 
+      id: docRef.id,
+      data: {
+        id: docRef.id,
+        ...data
+      }
     };
   } catch (error) {
-    console.error("Error adding room:", error);
+    console.error('Error adding room:', error);
     return { success: false, error };
   }
 };
@@ -329,8 +332,22 @@ export const getRoom = async (dormitoryId: string, roomId: string) => {
 
 export const updateRoom = async (dormitoryId: string, roomId: string, data: Partial<Room>) => {
   try {
-    const docRef = doc(db, `dormitories/${dormitoryId}/rooms`, roomId);
-    await updateDoc(docRef, data);
+    // ตรวจสอบว่า room ID มีอยู่จริง
+    const roomRef = doc(db, `dormitories/${dormitoryId}/rooms`, roomId);
+    const roomDoc = await getDoc(roomRef);
+    
+    if (!roomDoc.exists()) {
+      return { 
+        success: false, 
+        error: 'ไม่พบข้อมูลห้องพัก' 
+      };
+    }
+
+    await updateDoc(roomRef, {
+      ...data,
+      updatedAt: serverTimestamp()
+    });
+
     return { success: true };
   } catch (error) {
     console.error('Error updating room:', error);
@@ -855,9 +872,6 @@ export const createBill = async (dormitoryId: string, data: Omit<Bill, 'id' | 'c
       updatedAt: serverTimestamp(),
     });
 
-    // อัพเดทยอดค้างชำระของผู้เช่า
-    await calculateOutstandingBalance(dormitoryId, data.tenantId);
-
     return { success: true, id: docRef.id };
   } catch (error) {
     console.error('Error creating bill:', error);
@@ -948,39 +962,12 @@ export const updateBillStatus = async (
 // Payment Functions
 export const addPayment = async (dormitoryId: string, data: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'>) => {
   try {
-    // เพิ่มการชำระเงิน
     const paymentRef = collection(db, `dormitories/${dormitoryId}/payments`);
     const docRef = await addDoc(paymentRef, {
       ...data,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-
-    // อัพเดทสถานะบิล
-    const billRef = doc(db, `dormitories/${dormitoryId}/bills`, data.billId);
-    const billDoc = await getDoc(billRef);
-    if (billDoc.exists()) {
-      const bill = billDoc.data() as Bill;
-      const newPaidAmount = (bill.paidAmount || 0) + data.amount;
-      const newRemainingAmount = bill.totalAmount - newPaidAmount;
-      const newStatus = newRemainingAmount <= 0 ? 'paid' : newPaidAmount > 0 ? 'partially_paid' : 'pending';
-
-      await updateDoc(billRef, {
-        paidAmount: newPaidAmount,
-        remainingAmount: newRemainingAmount,
-        status: newStatus,
-        payments: arrayUnion({
-          id: docRef.id,
-          ...data,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-        updatedAt: serverTimestamp(),
-      });
-
-      // อัพเดทยอดค้างชำระของผู้เช่า
-      await calculateOutstandingBalance(dormitoryId, data.tenantId);
-    }
 
     return { success: true, id: docRef.id };
   } catch (error) {
@@ -1130,97 +1117,63 @@ export const recalculateOutstandingBalance = async (dormitoryId: string, tenantI
 // ฟังก์ชันบันทึกค่ามิเตอร์
 export const saveMeterReading = async (dormitoryId: string, data: {
   roomId: string;
+  roomNumber: string;
   previousReading: number;
   currentReading: number;
+  unitsUsed: number;
   readingDate: string;
   type: 'electric' | 'water';
 }) => {
   try {
-    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
-    
-    // คำนวณหน่วยที่ใช้
-    const unitsUsed = data.currentReading - data.previousReading;
-    
-    const docRef = await addDoc(meterReadingRef, {
-      ...data,
-      unitsUsed,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    return {
-      success: true,
-      data: {
-        id: docRef.id,
+    const docRef = await addDoc(
+      collection(db, `${COLLECTIONS.DORMITORIES}/${dormitoryId}/${COLLECTIONS.METER_READINGS}`), 
+      {
         ...data,
-        unitsUsed,
-        status: 'pending'
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       }
+    );
+
+    return { 
+      success: true, 
+      id: docRef.id,
+      data: { ...data }
     };
   } catch (error) {
     console.error('Error saving meter reading:', error);
-    return {
-      success: false,
-      error: 'เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์'
-    };
+    return { success: false, error };
   }
 };
 
 // ฟังก์ชันดึงค่ามิเตอร์ล่าสุด
 export const getLatestMeterReading = async (
   dormitoryId: string,
-  roomId: string,
+  roomNumber: string,
   type: 'electric' | 'water'
 ) => {
   try {
-    if (!dormitoryId || !roomId) {
-      console.warn('Missing dormitoryId or roomId in getLatestMeterReading');
-      return { success: true, data: null };
-    }
-
-    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
-    
     const q = query(
-      meterReadingRef,
-      where('roomId', '==', roomId),
+      collection(db, `${COLLECTIONS.DORMITORIES}/${dormitoryId}/${COLLECTIONS.METER_READINGS}`),
+      where('roomNumber', '==', roomNumber),
       where('type', '==', type),
       orderBy('readingDate', 'desc'),
       limit(1)
     );
     
     const snapshot = await getDocs(q);
-    if (snapshot.empty) {
-      return { success: true, data: null };
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      const data = doc.data();
+      return { 
+        success: true, 
+        data: {
+          id: doc.id,
+          ...data,
+          unitsUsed: data.unitsUsed || data.currentReading - data.previousReading // ใช้ค่า unitsUsed ที่บันทึกไว้ หรือคำนวณใหม่ถ้าไม่มี
+        }
+      };
     }
-
-    const doc = snapshot.docs[0];
-    const reading = doc.data();
-    
-    // แปลง readingDate ให้ถูกต้อง
-    let readingDate: Date;
-    if (reading.readingDate?.toDate) {
-      // ถ้าเป็น Timestamp
-      readingDate = reading.readingDate.toDate();
-    } else if (reading.readingDate) {
-      // ถ้าเป็น string หรือ Date string
-      readingDate = new Date(reading.readingDate);
-    } else {
-      // ถ้าไม่มีค่า
-      readingDate = new Date();
-    }
-    
-    return { 
-      success: true, 
-      data: {
-        id: doc.id,
-        roomId: reading.roomId,
-        currentReading: reading.currentReading,
-        previousReading: reading.previousReading,
-        readingDate: readingDate,
-        type: reading.type
-      }
-    };
+    return { success: true, data: null };
   } catch (error) {
     console.error('Error getting latest meter reading:', error);
     return { success: false, error };
@@ -1247,15 +1200,12 @@ export const getInitialMeterReading = async (dormitoryId: string): Promise<numbe
 // เพิ่มฟังก์ชันสำหรับดึงประวัติการใช้ไฟฟ้า
 export const getElectricityHistory = async (dormitoryId: string, roomNumber: string) => {
   try {
-    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
-    
-    // ใช้ composite index
     const q = query(
-      meterReadingRef,
+      collection(db, `${COLLECTIONS.DORMITORIES}/${dormitoryId}/${COLLECTIONS.METER_READINGS}`),
       where('roomNumber', '==', roomNumber),
       where('type', '==', 'electric'),
       orderBy('readingDate', 'desc'),
-      limit(12) // ดึงข้อมูล 12 เดือนล่าสุด
+      limit(12)
     );
 
     const snapshot = await getDocs(q);
@@ -1277,3 +1227,147 @@ export const getElectricityHistory = async (dormitoryId: string, roomNumber: str
     return { success: false, error };
   }
 };
+
+// เพิ่ม interface แยกระหว่าง Bill และ BillingConfig
+interface BillingConfig {
+  dueDate: number;
+  lateFee: number;
+  bankAccounts: Array<{
+    bank: string;
+    accountNumber: string;
+    accountName: string;
+  }>;
+}
+
+interface Bill {
+  // ... existing bill interface
+}
+
+// บันทึกเงื่อนไขการออกบิล
+export const saveBillingConditions = async (dormitoryId: string, conditions: BillingConditions) => {
+  try {
+    const docRef = doc(db, `dormitories/${dormitoryId}/settings/billing`);
+    await setDoc(docRef, {
+      ...conditions,
+      updatedAt: serverTimestamp(),
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving billing conditions:', error);
+    return { success: false, error };
+  }
+};
+
+// ดึงเงื่อนไขการออกบิล
+export const getBillingConditions = async (dormitoryId: string) => {
+  try {
+    const docRef = doc(db, `dormitories/${dormitoryId}/settings/billing`);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return { success: true, data: docSnap.data() as BillingConditions };
+    }
+    
+    // ถ้ายังไม่เคยตั้งค่า ใช้ค่าเริ่มต้น
+    const defaultConditions: BillingConditions = {
+      allowedDaysBeforeDueDate: 7,
+      requireMeterReading: true,
+      allowPartialBilling: false,
+      minimumStayForBilling: 0,
+      gracePeriod: 7,
+      lateFeeRate: 2,
+      autoGenerateBill: false
+    };
+    
+    return { success: true, data: defaultConditions };
+  } catch (error) {
+    console.error('Error getting billing conditions:', error);
+    return { success: false, error };
+  }
+};
+
+// เพิ่มฟังก์ชันสำหรับสร้าง default config
+interface DormitoryConfig {
+  roomRate: number;
+  waterRate: number;
+  electricityRate: number;
+  commonFee: number;
+  parkingFee: number;
+  additionalServices: Array<{
+    name: string;
+    price: number;
+  }>;
+  billingCycle: {
+    startDay: number;           // วันที่เริ่มรอบบิล (1-31)
+    allowEarlyBilling: boolean; // อนุญาตให้สร้างบิลก่อนถึงรอบได้หรือไม่
+  };
+}
+
+export async function initializeDormitoryConfig() {
+  const configRef = doc(db, 'config', 'dormitory');
+  const configSnap = await getDoc(configRef);
+
+  if (!configSnap.exists()) {
+    const defaultConfig: DormitoryConfig = {
+      roomRate: 4000,         // ค่าห้องเริ่มต้น
+      waterRate: 100,         // ค่าน้ำเริ่มต้น
+      electricityRate: 8,     // ค่าไฟต่อหน่วย
+      commonFee: 100,         // ค่าส่วนกลาง
+      parkingFee: 200,        // ค่าที่จอดรถ
+      additionalServices: [   // บริการเสริมอื่นๆ
+        {
+          name: "ค่าอินเตอร์เน็ต",
+          price: 200
+        }
+      ],
+      billingCycle: {
+        startDay: 1,            // เริ่มรอบบิลวันที่ 1 ของเดือน
+        allowEarlyBilling: false // ไม่อนุญาตให้สร้างบิลก่อนถึงรอบ
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    await setDoc(configRef, defaultConfig);
+    return defaultConfig;
+  }
+
+  return configSnap.data() as DormitoryConfig;
+}
+
+// ปรับปรุงฟังก์ชัน getDormitoryConfig
+export async function getDormitoryConfig() {
+  const configRef = doc(db, 'config', 'dormitory');
+  const configSnap = await getDoc(configRef);
+  
+  if (!configSnap.exists()) {
+    // ถ้าไม่มีข้อมูล config ให้สร้าง default
+    return initializeDormitoryConfig();
+  }
+
+  return configSnap.data() as {
+    roomRate: number;
+    waterRate: number;
+    electricityRate: number;
+    commonFee: number;
+    parkingFee: number;
+    additionalServices: Array<{
+      name: string;
+      price: number;
+    }>;
+  };
+}
+
+export async function getActiveTenants() {
+  const tenantsRef = collection(db, 'tenants');
+  const q = query(
+    tenantsRef,
+    where('status', '==', 'active')
+  );
+  
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  })) as TenantWithBillStatus[];
+}

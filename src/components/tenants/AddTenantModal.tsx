@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import type { Dormitory } from '@/types/dormitory'
+import type { Dormitory, Room } from '@/types/dormitory'
 import { toast } from "sonner";
-import { addTenant } from "@/lib/firebase/firebaseUtils";
+import { addTenant, getRooms } from "@/lib/firebase/firebaseUtils";
 import { collection, getDocs, doc, writeBatch, serverTimestamp, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 
@@ -34,6 +34,7 @@ interface TenantFormData {
     phone: string;
   };
   outstandingBalance: number;
+  roomId: string;
 }
 
 export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess }: AddTenantModalProps) {
@@ -57,9 +58,11 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
       phone: "",
     },
     outstandingBalance: 0,
+    roomId: "",
   });
   const [isIdCardLocked, setIsIdCardLocked] = useState(false);
   const [workplaces, setWorkplaces] = useState<string[]>([]);
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
 
   // โหลดข้อมูลที่ทำงานที่มีอยู่
   useEffect(() => {
@@ -76,6 +79,34 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
 
     loadWorkplaces();
   }, []);
+
+  // โหลดข้อมูลห้องเมื่อเลือกหอพัก
+  useEffect(() => {
+    const loadRooms = async () => {
+      if (!formData.dormitoryId) {
+        setAvailableRooms([]);
+        return;
+      }
+
+      try {
+        const result = await getRooms(formData.dormitoryId);
+        if (result.success) {
+          // กรองเฉพาะห้องที่ว่าง
+          const emptyRooms = result.data.filter(room => room.status === 'available');
+          // เรียงตามเลขห้อง
+          const sortedRooms = emptyRooms.sort((a, b) => {
+            return a.number.localeCompare(b.number, undefined, { numeric: true });
+          });
+          setAvailableRooms(sortedRooms);
+        }
+      } catch (error) {
+        console.error('Error loading rooms:', error);
+        toast.error('ไม่สามารถโหลดข้อมูลห้องได้');
+      }
+    };
+
+    loadRooms();
+  }, [formData.dormitoryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -436,13 +467,32 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
                     <label className="block text-sm font-medium text-gray-700">
                       เลขห้อง <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
+                    <select
                       value={formData.roomNumber}
-                      onChange={(e) => setFormData({ ...formData, roomNumber: e.target.value })}
+                      onChange={(e) => {
+                        const selectedRoom = availableRooms.find(room => room.number === e.target.value);
+                        setFormData({
+                          ...formData,
+                          roomNumber: e.target.value,
+                          roomId: selectedRoom?.id || ''
+                        });
+                      }}
                       required
                       className="mt-1 block w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                    />
+                    >
+                      <option value="">เลือกห้อง</option>
+                      {availableRooms.map((room) => (
+                        <option key={room.id} value={room.number}>
+                          {room.number} - ชั้น {room.floor} 
+                          {room.roomType && ` (${room.roomType})`}
+                        </option>
+                      ))}
+                    </select>
+                    {availableRooms.length === 0 && formData.dormitoryId && (
+                      <p className="mt-1 text-sm text-yellow-600">
+                        ไม่มีห้องว่างในหอพักนี้
+                      </p>
+                    )}
                   </div>
 
                   <div>

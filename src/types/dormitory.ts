@@ -126,28 +126,17 @@ export interface DormitoryStats {
 
 export interface Tenant {
   id: string;
+  tenantId: string;
   name: string;
-  dormitoryId: string;
   roomNumber: string;
-  startDate: string;
-  deposit: number;
-  numberOfResidents: number;
-  outstandingBalance: number;
+  roomId: string;
+  dormitoryId: string;
   phone: string;
-  email?: string;
-  idCard: string;
-  lineId?: string;
-  workplace?: string;
-  currentAddress?: string;
-  emergencyContact?: {
-    name: string;
-    relationship: string;
-    phone: string;
-  };
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  severity?: number;
+  email: string;
+  moveInDate: string;
+  status: 'active' | 'inactive' | 'moving_out';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface UtilityReading {
@@ -284,6 +273,7 @@ export interface MeterReading {
   unitsUsed: number;
   readingDate: string;
   type: 'electric' | 'water';
+  status: 'pending' | 'billed';
   createdAt: string;
   updatedAt: string;
 } 
