@@ -130,22 +130,12 @@ export const getDormitory = async (id: string) => {
   }
 };
 
-export const updateDormitory = async (id: string, data: Partial<Dormitory>) => {
-  try {
-    const docRef = doc(db, COLLECTIONS.DORMITORIES, id);
-    const updateData = {
-      ...data,
-      totalFloors: data.totalFloors || 1,
-      floors: data.totalFloors || 1,
-      updatedAt: serverTimestamp(),
-    };
-    
-    await updateDoc(docRef, updateData);
-    return { success: true };
-  } catch (error) {
-    console.error('Error updating dormitory:', error);
-    return { success: false, error };
-  }
+export const updateDormitory = async (
+  dormId: string,
+  data: Partial<Dormitory>
+) => {
+  const dormRef = doc(db, 'dormitories', dormId);
+  await updateDoc(dormRef, data);
 };
 
 export const deleteDormitory = async (id: string) => {
@@ -438,6 +428,39 @@ export const addRoomType = async (dormitoryId: string, data: Omit<RoomType, 'id'
   }
 };
 
+export interface Dormitory {
+  id: string;
+  name: string;
+  address: string;
+  totalFloors: number;
+  floors: number;
+  config: {
+    roomTypes: Record<string, RoomType>;
+    additionalFees: {
+      airConditioner: number | null;
+      parking: number | null;
+      floorRates: Record<string, number>;
+      utilities: {
+        water: {
+          perPerson: number | null;
+        };
+        electric: {
+          unit: number | null;
+        };
+      };
+    };
+  };
+  dueDate?: number;
+  facilities: string[];
+  images: string[];
+  status: string;
+  description: string;
+  phone: string;
+  location: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export const getRoomTypes = async (dormitoryId: string) => {
   try {
     const docRef = doc(db, COLLECTIONS.DORMITORIES, dormitoryId);
@@ -445,21 +468,25 @@ export const getRoomTypes = async (dormitoryId: string) => {
     
     if (docSnap.exists()) {
       const data = docSnap.data();
-      const roomTypes = data.config?.roomTypes as Record<string, Omit<RoomType, 'id'>> || {};
+      const roomTypes = data.config?.roomTypes || {};
       
-      // แปลง object เป็น array และเพิ่ม id
-      const roomTypesArray = Object.entries(roomTypes).map(([id, type]) => ({
-        ...type,
+      // แปลง object เป็น array และเพิ่ม id พร้อมกับระบุ type ให้ชัดเจน
+      const roomTypesArray = Object.entries(roomTypes).map(([id, roomType]) => ({
         id,
+        name: (roomType as RoomType).name,
+        basePrice: (roomType as RoomType).basePrice,
+        description: (roomType as RoomType).description,
+        isDefault: (roomType as RoomType).isDefault,
+        facilities: (roomType as RoomType).facilities || [],
       }));
       
       return { success: true, data: roomTypesArray };
     }
     
-    return { success: false, error: 'Document not found' };
+    return { success: false, error: 'ไม่พบข้อมูลรูปแบบห้อง' };
   } catch (error) {
     console.error('Error getting room types:', error);
-    return { success: false, error };
+    return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลรูปแบบห้อง' };
   }
 };
 
@@ -503,54 +530,90 @@ export const addTenant = async (data: Omit<Tenant, 'id' | 'createdAt' | 'updated
   }
 };
 
+export const calculateOutstandingBalance = async (
+  dormitoryId: string,
+  tenantId: string
+) => {
+  try {
+    // 1. ดึงข้อมูลบิลทั้งหมดของผู้เช่า
+    const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
+    const q = query(
+      billsRef,
+      where('tenantId', '==', tenantId),
+      where('status', 'in', ['pending', 'partially_paid', 'overdue'])
+    );
+    
+    const billsSnapshot = await getDocs(q);
+    let totalOutstanding = 0;
+
+    // 2. คำนวณยอดค้างชำระจากบิลที่ยังไม่ชำระหรือชำระบางส่วน
+    billsSnapshot.forEach((doc) => {
+      const bill = doc.data();
+      totalOutstanding += bill.remainingAmount || bill.totalAmount;
+    });
+
+    // 3. อัพเดทยอดค้างชำระในข้อมูลผู้เช่า
+    const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, tenantId);
+    await updateDoc(tenantRef, {
+      outstandingBalance: totalOutstanding,
+      updatedAt: serverTimestamp()
+    });
+
+    return { success: true, outstandingBalance: totalOutstanding };
+  } catch (error) {
+    console.error('Error calculating outstanding balance:', error);
+    return { success: false, error };
+  }
+};
+
+export const updateAllTenantsOutstandingBalance = async (dormitoryId: string) => {
+  try {
+    const tenantsRef = collection(db, `dormitories/${dormitoryId}/tenants`);
+    const tenantsSnapshot = await getDocs(tenantsRef);
+    
+    const updatePromises = tenantsSnapshot.docs.map(async (doc) => {
+      const tenant = doc.data();
+      return calculateOutstandingBalance(dormitoryId, doc.id);
+    });
+
+    await Promise.all(updatePromises);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating all tenants outstanding balance:', error);
+    return { success: false, error };
+  }
+};
+
 export const queryTenants = async (dormitoryId?: string) => {
   try {
     let tenantsQuery;
     
     if (dormitoryId) {
-      // ถ้าระบุ dormitoryId ให้ดึงเฉพาะผู้เช่าในหอพักนั้น
       tenantsQuery = collection(db, `dormitories/${dormitoryId}/tenants`);
     } else {
-      // ถ้าไม่ระบุ dormitoryId ให้ดึงผู้เช่าทั้งหมด
       tenantsQuery = collectionGroup(db, 'tenants');
     }
     
     const snapshot = await getDocs(tenantsQuery);
-    const tenants = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id,
-      } as Tenant;
-    });
+    const tenants = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+    })) as Tenant[];
 
-    // ดึงข้อมูลบิลและคำนวณยอดคงค้างสำหรับแต่ละผู้เช่า
+    // อัพเดทยอดค้างชำระสำหรับผู้เช่าทุกคน
     if (dormitoryId) {
-      const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
-      for (const tenant of tenants) {
-        const q = query(
-          billsRef,
-          where('tenantId', '==', tenant.id),
-          where('status', 'in', ['pending', 'partially_paid'])
-        );
-        const billsSnapshot = await getDocs(q);
-        const bills = billsSnapshot.docs.map(doc => doc.data() as Bill);
-        
-        // คำนวณยอดคงค้างจากบิลที่ยังไม่ชำระหรือชำระบางส่วน
-        const outstandingBalance = bills.reduce((total, bill) => total + bill.remainingAmount, 0);
-        
-        // อัพเดทยอดคงค้างในข้อมูลผู้เช่า
-        tenant.outstandingBalance = outstandingBalance;
-        
-        // อัพเดทในฐานข้อมูลด้วย
-        const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, tenant.id);
-        await updateDoc(tenantRef, {
-          outstandingBalance,
-          updatedAt: serverTimestamp(),
-        });
-      }
+      await updateAllTenantsOutstandingBalance(dormitoryId);
+      
+      // ดึงข้อมูลผู้เช่าอีกครั้งหลังจากอัพเดทยอดค้างชำระ
+      const updatedSnapshot = await getDocs(tenantsQuery);
+      const updatedTenants = updatedSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+      })) as Tenant[];
+
+      return { success: true, data: updatedTenants };
     }
-    
+
     return { success: true, data: tenants };
   } catch (error) {
     console.error('Error querying tenants:', error);
@@ -792,16 +855,8 @@ export const createBill = async (dormitoryId: string, data: Omit<Bill, 'id' | 'c
       updatedAt: serverTimestamp(),
     });
 
-    // อัพเดทค่าเช่าคงค้างของผู้เช่า
-    const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, data.tenantId);
-    const tenantDoc = await getDoc(tenantRef);
-    if (tenantDoc.exists()) {
-      const tenant = tenantDoc.data();
-      await updateDoc(tenantRef, {
-        outstandingBalance: (tenant.outstandingBalance || 0) + data.totalAmount,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    // อัพเดทยอดค้างชำระของผู้เช่า
+    await calculateOutstandingBalance(dormitoryId, data.tenantId);
 
     return { success: true, id: docRef.id };
   } catch (error) {
@@ -923,16 +978,8 @@ export const addPayment = async (dormitoryId: string, data: Omit<Payment, 'id' |
         updatedAt: serverTimestamp(),
       });
 
-      // อัพเดทค่าเช่าคงค้างของผู้เช่า
-      const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, data.tenantId);
-      const tenantDoc = await getDoc(tenantRef);
-      if (tenantDoc.exists()) {
-        const tenant = tenantDoc.data();
-        await updateDoc(tenantRef, {
-          outstandingBalance: Math.max(0, (tenant.outstandingBalance || 0) - data.amount),
-          updatedAt: serverTimestamp(),
-        });
-      }
+      // อัพเดทยอดค้างชำระของผู้เช่า
+      await calculateOutstandingBalance(dormitoryId, data.tenantId);
     }
 
     return { success: true, id: docRef.id };
@@ -1080,7 +1127,7 @@ export const recalculateOutstandingBalance = async (dormitoryId: string, tenantI
   }
 };
 
-// ฟังก์ชันสำหรับบันทึกค่ามิเตอร์
+// ฟังก์ชันบันทึกค่ามิเตอร์
 export const saveMeterReading = async (dormitoryId: string, data: {
   roomId: string;
   previousReading: number;
@@ -1090,9 +1137,14 @@ export const saveMeterReading = async (dormitoryId: string, data: {
 }) => {
   try {
     const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
+    
+    // คำนวณหน่วยที่ใช้
+    const unitsUsed = data.currentReading - data.previousReading;
+    
     const docRef = await addDoc(meterReadingRef, {
       ...data,
-      unitsUsed: data.currentReading - data.previousReading,
+      unitsUsed,
+      status: 'pending',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1101,7 +1153,9 @@ export const saveMeterReading = async (dormitoryId: string, data: {
       success: true,
       data: {
         id: docRef.id,
-        ...data
+        ...data,
+        unitsUsed,
+        status: 'pending'
       }
     };
   } catch (error) {
@@ -1113,43 +1167,22 @@ export const saveMeterReading = async (dormitoryId: string, data: {
   }
 };
 
-// ฟังก์ชันสำหรับดึงประวัติค่ามิเตอร์
-export const getMeterReadingHistory = async (dormitoryId: string, roomId: string, type: 'electric' | 'water') => {
+// ฟังก์ชันดึงค่ามิเตอร์ล่าสุด
+export const getLatestMeterReading = async (
+  dormitoryId: string,
+  roomId: string,
+  type: 'electric' | 'water'
+) => {
   try {
+    if (!dormitoryId || !roomId) {
+      console.warn('Missing dormitoryId or roomId in getLatestMeterReading');
+      return { success: true, data: null };
+    }
+
     const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
+    
     const q = query(
       meterReadingRef,
-      where('roomId', '==', roomId),
-      where('type', '==', type),
-      orderBy('readingDate', 'desc'),
-      limit(12) // ดึงข้อมูลย้อนหลัง 12 เดือน
-    );
-
-    const snapshot = await getDocs(q);
-    const readings = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    return {
-      success: true,
-      data: readings
-    };
-  } catch (error) {
-    console.error('Error getting meter reading history:', error);
-    return {
-      success: false,
-      error: 'เกิดข้อผิดพลาดในการดึงประวัติค่ามิเตอร์'
-    };
-  }
-};
-
-// ฟังก์ชันสำหรับดึงค่ามิเตอร์ล่าสุด
-export const getLatestMeterReading = async (dormitoryId: string, roomId: string, type: 'electric' | 'water') => {
-  try {
-    const readingsRef = collection(db, 'meter_readings');
-    const q = query(
-      readingsRef,
       where('roomId', '==', roomId),
       where('type', '==', type),
       orderBy('readingDate', 'desc'),
@@ -1161,14 +1194,86 @@ export const getLatestMeterReading = async (dormitoryId: string, roomId: string,
       return { success: true, data: null };
     }
 
-    const latestReading = {
-      id: snapshot.docs[0].id,
-      ...snapshot.docs[0].data()
+    const doc = snapshot.docs[0];
+    const reading = doc.data();
+    
+    // แปลง readingDate ให้ถูกต้อง
+    let readingDate: Date;
+    if (reading.readingDate?.toDate) {
+      // ถ้าเป็น Timestamp
+      readingDate = reading.readingDate.toDate();
+    } else if (reading.readingDate) {
+      // ถ้าเป็น string หรือ Date string
+      readingDate = new Date(reading.readingDate);
+    } else {
+      // ถ้าไม่มีค่า
+      readingDate = new Date();
+    }
+    
+    return { 
+      success: true, 
+      data: {
+        id: doc.id,
+        roomId: reading.roomId,
+        currentReading: reading.currentReading,
+        previousReading: reading.previousReading,
+        readingDate: readingDate,
+        type: reading.type
+      }
     };
-
-    return { success: true, data: latestReading };
   } catch (error) {
     console.error('Error getting latest meter reading:', error);
+    return { success: false, error };
+  }
+};
+
+export const getInitialMeterReading = async (dormitoryId: string): Promise<number> => {
+  try {
+    const dormRef = doc(db, 'dormitories', dormitoryId);
+    const dormDoc = await getDoc(dormRef);
+    
+    if (dormDoc.exists()) {
+      const dormData = dormDoc.data();
+      return dormData.initialMeterReading || 0;
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error('Error getting initial meter reading:', error);
+    return 0;
+  }
+};
+
+// เพิ่มฟังก์ชันสำหรับดึงประวัติการใช้ไฟฟ้า
+export const getElectricityHistory = async (dormitoryId: string, roomNumber: string) => {
+  try {
+    const meterReadingRef = collection(db, 'dormitories', dormitoryId, 'meter_readings');
+    
+    // ใช้ composite index
+    const q = query(
+      meterReadingRef,
+      where('roomNumber', '==', roomNumber),
+      where('type', '==', 'electric'),
+      orderBy('readingDate', 'desc'),
+      limit(12) // ดึงข้อมูล 12 เดือนล่าสุด
+    );
+
+    const snapshot = await getDocs(q);
+    const readings = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return { success: true, data: readings };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('requires an index')) {
+      console.error('Please create the required index in Firebase Console');
+      return { 
+        success: false, 
+        error: 'กรุณาสร้าง index ใน Firebase Console ก่อนใช้งาน' 
+      };
+    }
+    console.error('Error getting electricity history:', error);
     return { success: false, error };
   }
 };

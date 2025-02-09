@@ -1,271 +1,192 @@
-"use client";
+ "use client";
 
 import { useState, useEffect } from "react";
-import { queryDormitories, getRooms } from "@/lib/firebase/firebaseUtils";
-import { saveMeterReading, getLatestMeterReading } from "@/lib/firebase/firebaseUtils";
-import { Dormitory, Room } from "@/types/dormitory";
-import { Plus, Search, Loader2, Save } from "lucide-react";
+import { queryDormitories, getRooms, saveMeterReading, getLatestMeterReading, queryTenants } from "@/lib/firebase/firebaseUtils";
+import { Dormitory, Room, MeterReading } from "@/types/dormitory";
 import { toast } from "sonner";
+import { Plus, Search, Loader2, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-interface MeterReading {
-  id: string;
-  roomId: string;
-  previousReading: number;
-  currentReading: number;
-  readingDate: string;
-  type: 'electric' | 'water';
-  unitsUsed: number;
-  createdAt: any;
-  updatedAt: any;
+// เพิ่ม interface สำหรับการเรียงข้อมูล
+interface SortConfig {
+  key: 'number' | 'dormitoryName' | 'tenantName' | 'previousReading' | 'currentReading' | 'unitsUsed';
+  direction: 'asc' | 'desc';
 }
 
 export default function MeterReadingPage() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [dormitories, setDormitories] = useState<Dormitory[]>([]);
   const [selectedDormitory, setSelectedDormitory] = useState<string>("");
+  const [dormitories, setDormitories] = useState<Dormitory[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // ค่ามิเตอร์
   const [meterReadings, setMeterReadings] = useState<Record<string, number>>({});
   const [previousReadings, setPreviousReadings] = useState<Record<string, number>>({});
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [savingRoom, setSavingRoom] = useState<string | null>(null);
-  const [saveTimeoutId, setSaveTimeoutId] = useState<NodeJS.Timeout | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isLoadingReadings, setIsLoadingReadings] = useState(false);
-  const [isModified, setIsModified] = useState(false);
-  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
-  const [unsavedReadings, setUnsavedReadings] = useState<Record<string, number>>({});
+  const [savingRoom, setSavingRoom] = useState<string | null>(null);
 
-  // แยกฟังก์ชันโหลดข้อมูลห้องและค่ามิเตอร์ออกมา
-  const loadRoomsAndReadings = async (dormitoryId: string) => {
-    if (!dormitoryId) return;
+  // เพิ่ม state สำหรับการเรียงข้อมูล
+  const [sortConfig, setSortConfig] = useState<SortConfig>({
+    key: 'number',
+    direction: 'asc'
+  });
 
-    try {
-      setIsLoadingReadings(true);
-      const result = await getRooms(dormitoryId);
-      if (result.success && result.data) {
-        // เรียงลำดับห้องตามเลขห้อง
-        const sortedRooms = result.data.sort((a, b) => {
-          const aNum = parseInt(a.number.replace(/\D/g, ''));
-          const bNum = parseInt(b.number.replace(/\D/g, ''));
-          return aNum - bNum;
-        });
-        setRooms(sortedRooms);
-        
-        // โหลดค่ามิเตอร์ล่าสุดของแต่ละห้อง
-        const readings: Record<string, number> = {};
-        const currentReadings: Record<string, number> = {};
-        const failedRooms: string[] = []; // เก็บรายการห้องที่โหลดไม่สำเร็จ
-        
-        for (const room of sortedRooms) {
-          try {
-            const readingResult = await getLatestMeterReading(dormitoryId, room.id, 'electric');
-            if (readingResult.success && readingResult.data) {
-              const latestReading = readingResult.data as MeterReading;
-              readings[room.id] = latestReading.currentReading;
-              currentReadings[room.id] = latestReading.currentReading;
-            } else {
-              readings[room.id] = room.initialMeterReading || 0;
-              currentReadings[room.id] = room.initialMeterReading || 0;
-              failedRooms.push(room.number);
-            }
-          } catch (error) {
-            console.error(`Error loading reading for room ${room.number}:`, error);
-            readings[room.id] = room.initialMeterReading || 0;
-            currentReadings[room.id] = room.initialMeterReading || 0;
-            failedRooms.push(room.number);
-          }
-        }
+  // เพิ่ม state สำหรับเก็บข้อมูลผู้เช่า
+  const [tenants, setTenants] = useState<Record<string, string>>({});  // roomNumber -> tenantName
 
-        // แสดง error รวมทั้งหมดครั้งเดียว
-        if (failedRooms.length > 0) {
-          toast.error(`ไม่สามารถโหลดค่ามิเตอร์ของห้อง: ${failedRooms.join(', ')}`);
-        }
-
-        setPreviousReadings(readings);
-        setMeterReadings(currentReadings);
-      }
-    } catch (error) {
-      console.error("Error loading rooms:", error);
-      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลห้องพัก");
-    } finally {
-      setIsLoadingReadings(false);
-    }
-  };
-
-  // โหลดข้อมูลหอพักทั้งหมด
+  // โหลดข้อมูลหอพัก
   useEffect(() => {
-    const loadData = async () => {
+    const loadDormitories = async () => {
       try {
-        setIsLoading(true);
         const result = await queryDormitories();
-        if (result.success && result.data) {
+        if (result.success) {
           setDormitories(result.data);
+          // ถ้ามีหอพัก ให้เลือกหอพักแรกเป็นค่าเริ่มต้น
           if (result.data.length > 0) {
             setSelectedDormitory(result.data[0].id);
           }
         }
       } catch (error) {
-        console.error("Error loading dormitories:", error);
-        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลหอพัก");
+        console.error('Error loading dormitories:', error);
+        toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูลหอพัก');
+      }
+    };
+    loadDormitories();
+  }, []);
+
+  // โหลดข้อมูลห้องเมื่อเลือกหอพัก
+  useEffect(() => {
+    const loadRooms = async () => {
+      if (!selectedDormitory) return;
+      
+      try {
+        setIsLoading(true);
+        const [roomsResult, tenantsResult] = await Promise.all([
+          getRooms(selectedDormitory),
+          queryTenants(selectedDormitory)
+        ]);
+
+        if (roomsResult.success) {
+          // เรียงลำดับห้องตามเลขห้อง
+          const sortedRooms = roomsResult.data.sort((a, b) => {
+            const roomA = parseInt(a.number.replace(/\D/g, ''));
+            const roomB = parseInt(b.number.replace(/\D/g, ''));
+            return roomA - roomB;
+          });
+          
+          setRooms(sortedRooms);
+
+          // สร้าง map ของผู้เช่า
+          if (tenantsResult.success) {
+            const tenantMap: Record<string, string> = {};
+            tenantsResult.data.forEach(tenant => {
+              tenantMap[tenant.roomNumber] = tenant.name;
+            });
+            setTenants(tenantMap);
+          }
+          
+          // โหลดค่ามิเตอร์ล่าสุดของแต่ละห้อง
+          const readings: Record<string, number> = {};
+          const prevReadings: Record<string, number> = {};
+          
+          for (const room of sortedRooms) {
+            const meterResult = await getLatestMeterReading(selectedDormitory, room.id, 'electric');
+            if (meterResult.success && meterResult.data) {
+              readings[room.id] = meterResult.data.currentReading;
+              prevReadings[room.id] = meterResult.data.previousReading;
+            } else {
+              // ถ้าไม่มีค่ามิเตอร์ล่าสุด ใช้ค่าเริ่มต้นจากห้อง
+              readings[room.id] = room.initialMeterReading || 0;
+              prevReadings[room.id] = room.initialMeterReading || 0;
+            }
+          }
+          
+          setMeterReadings(readings);
+          setPreviousReadings(prevReadings);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
       } finally {
         setIsLoading(false);
       }
     };
-
-    loadData();
-  }, []);
-
-  // โหลดข้อมูลห้องพักและค่ามิเตอร์เมื่อเลือกหอพัก
-  useEffect(() => {
-    loadRoomsAndReadings(selectedDormitory);
+    
+    loadRooms();
   }, [selectedDormitory]);
 
-  // เพิ่ม effect สำหรับการบันทึกอัตโนมัติทุก 1 นาที
-  useEffect(() => {
-    if (!isModified || Object.keys(unsavedReadings).length === 0) return;
+  // กรองห้องตามการค้นหา
+  const filteredRooms = rooms.filter(room => {
+    if (!searchQuery) return true;
+    return (
+      room.number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (room.tenantName && room.tenantName.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  });
 
-    const autoSaveInterval = setInterval(async () => {
-      const now = new Date();
-      if (!lastAutoSaveTime || (now.getTime() - lastAutoSaveTime.getTime()) >= 60000) { // 1 นาที
-        console.log('กำลังบันทึกอัตโนมัติ...');
-        await handleAutoSave();
-      }
-    }, 60000); // ตรวจสอบทุก 1 นาที
+  // ฟังก์ชันสำหรับเรียงข้อมูล
+  const handleSort = (key: SortConfig['key']) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
 
-    return () => clearInterval(autoSaveInterval);
-  }, [isModified, unsavedReadings, lastAutoSaveTime]);
+  // ฟังก์ชันสำหรับแสดงไอคอนการเรียง
+  const getSortIcon = (key: SortConfig['key']) => {
+    if (sortConfig.key !== key) return null;
+    return sortConfig.direction === 'asc' ? '↑' : '↓';
+  };
 
-  // เพิ่ม effect สำหรับการเตือนเมื่อมีการออกจากหน้า
-  useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (isModified && Object.keys(unsavedReadings).length > 0) {
-        const message = "คุณยังไม่ได้บันทึกข้อมูล การออกจากหน้านี้อาจทำให้ข้อมูลสูญหาย";
-        event.preventDefault();
-        event.returnValue = message;
-        return message;
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isModified, unsavedReadings]);
-
-  // ฟังก์ชันสำหรับการบันทึกอัตโนมัติ
-  const handleAutoSave = async () => {
-    if (!isModified || Object.keys(unsavedReadings).length === 0) return;
-
-    try {
-      setIsSaving(true);
-      const savePromises = Object.entries(unsavedReadings).map(([roomId, currentReading]) => 
-        handleSaveRoom(roomId, currentReading)
-      );
+  // เรียงข้อมูลตาม sortConfig
+  const sortedRooms = [...filteredRooms].sort((a, b) => {
+    const direction = sortConfig.direction === 'asc' ? 1 : -1;
+    
+    switch (sortConfig.key) {
+      case 'number':
+        const roomA = parseInt(a.number.replace(/\D/g, ''));
+        const roomB = parseInt(b.number.replace(/\D/g, ''));
+        return (roomA - roomB) * direction;
       
-      await Promise.all(savePromises);
-      setLastAutoSaveTime(new Date());
-      setUnsavedReadings({});
-      setIsModified(false);
-      toast.success('บันทึกข้อมูลอัตโนมัติเรียบร้อย');
-    } catch (error) {
-      console.error('Error auto-saving:', error);
-      toast.error('เกิดข้อผิดพลาดในการบันทึกอัตโนมัติ');
-    } finally {
-      setIsSaving(false);
+      case 'dormitoryName':
+        const dormA = dormitories.find(d => d.id === a.dormitoryId)?.name || '';
+        const dormB = dormitories.find(d => d.id === b.dormitoryId)?.name || '';
+        return dormA.localeCompare(dormB) * direction;
+      
+      case 'tenantName':
+        const nameA = a.tenantName || '';
+        const nameB = b.tenantName || '';
+        return nameA.localeCompare(nameB) * direction;
+      
+      case 'previousReading':
+        const prevA = previousReadings[a.id] || 0;
+        const prevB = previousReadings[b.id] || 0;
+        return (prevA - prevB) * direction;
+      
+      case 'currentReading':
+        const currA = meterReadings[a.id] || 0;
+        const currB = meterReadings[b.id] || 0;
+        return (currA - currB) * direction;
+      
+      case 'unitsUsed':
+        const unitsA = (meterReadings[a.id] || 0) - (previousReadings[a.id] || 0);
+        const unitsB = (meterReadings[b.id] || 0) - (previousReadings[b.id] || 0);
+        return (unitsA - unitsB) * direction;
+      
+      default:
+        return 0;
     }
-  };
+  });
 
-  const validateMeterReading = (value: string, previousReading: number): { isValid: boolean; error?: string } => {
-    if (value === '') {
-      return { isValid: false, error: 'กรุณากรอกค่ามิเตอร์' };
-    }
-
-    const numValue = parseFloat(value);
-    
-    if (isNaN(numValue)) {
-      return { isValid: false, error: 'กรุณากรอกตัวเลขเท่านั้น' };
-    }
-
-    if (numValue < 0) {
-      return { isValid: false, error: 'ค่ามิเตอร์ต้องไม่ติดลบ' };
-    }
-
-    if (numValue <= previousReading) {
-      return { isValid: false, error: `ค่ามิเตอร์ใหม่ต้องมากกว่า ${previousReading}` };
-    }
-
-    return { isValid: true };
-  };
-
-  const handleMeterReadingChange = (roomId: string, value: string) => {
-    const previousReading = previousReadings[roomId] || 0;
-    const validation = validateMeterReading(value, previousReading);
-
-    // อัพเดทค่าที่กำลังพิมพ์ทันที
-    const numValue = value === '' ? 0 : parseFloat(value);
-    setMeterReadings(prev => ({
-      ...prev,
-      [roomId]: numValue
-    }));
-
-    // เก็บค่าที่ยังไม่ได้บันทึก
-    setUnsavedReadings(prev => ({
-      ...prev,
-      [roomId]: numValue
-    }));
-    setIsModified(true);
-
-    if (!validation.isValid) {
-      setErrors(prev => ({
-        ...prev,
-        [roomId]: validation.error || ''
-      }));
-      return;
-    }
-
-    // ลบ error ถ้าค่าถูกต้อง
-    setErrors(prev => {
-      const newErrors = { ...prev };
-      delete newErrors[roomId];
-      return newErrors;
-    });
-
-    // ยกเลิก timeout เดิม (ถ้ามี)
-    if (saveTimeoutId) {
-      clearTimeout(saveTimeoutId);
-    }
-
-    // ตั้งเวลาใหม่
-    const timeoutId = setTimeout(() => {
-      if (!errors[roomId]) { // บันทึกเฉพาะเมื่อไม่มี error
-        handleSaveRoom(roomId, numValue);
-      }
-    }, 1500);
-    
-    setSaveTimeoutId(timeoutId);
-  };
-
-  const handleSaveRoom = async (roomId: string, currentReading: number) => {
+  // บันทึกค่ามิเตอร์
+  const handleSave = async (roomId: string, currentReading: number) => {
     const room = rooms.find(r => r.id === roomId);
-    if (!room) {
-      console.error('ไม่พบข้อมูลห้อง:', roomId);
-      return;
-    }
+    if (!room) return;
 
-    const previousReading = previousReadings[roomId] || room.initialMeterReading || 0;
+    const previousReading = previousReadings[roomId] || 0;
     
-    // ตรวจสอบค่าอีกครั้งก่อนบันทึก
-    const validation = validateMeterReading(currentReading.toString(), previousReading);
-    if (!validation.isValid) {
-      setErrors(prev => ({
-        ...prev,
-        [roomId]: validation.error || ''
-      }));
-      toast.error(`ห้อง ${room.number}: ${validation.error}`);
-      return;
-    }
-
     try {
       setSavingRoom(room.number);
       
@@ -278,106 +199,28 @@ export default function MeterReadingPage() {
       });
 
       if (result.success) {
-        // อัพเดท state หลังบันทึกสำเร็จ
-        setMeterReadings(prev => ({
-          ...prev,
-          [roomId]: currentReading
-        }));
-        setPreviousReadings(prev => ({
-          ...prev,
-          [roomId]: currentReading
-        }));
-        // ลบค่าที่บันทึกแล้วออกจาก unsavedReadings
-        setUnsavedReadings(prev => {
-          const newUnsaved = { ...prev };
-          delete newUnsaved[roomId];
-          return newUnsaved;
-        });
-        if (Object.keys(unsavedReadings).length === 0) {
-          setIsModified(false);
-        }
+        setMeterReadings(prev => ({ ...prev, [roomId]: currentReading }));
         toast.success(`บันทึกค่ามิเตอร์ห้อง ${room.number} เรียบร้อย`);
       } else {
-        setErrors(prev => ({
-          ...prev,
-          [roomId]: result.error || 'เกิดข้อผิดพลาดในการบันทึก'
-        }));
-        toast.error(`ห้อง ${room.number}: ${result.error || 'เกิดข้อผิดพลาดในการบันทึก'}`);
+        setErrors(prev => ({ ...prev, [roomId]: result.error || 'เกิดข้อผิดพลาดในการบันทึก' }));
       }
     } catch (error) {
-      console.error(`Error saving meter reading for room ${room.number}:`, error);
-      setErrors(prev => ({
-        ...prev,
-        [roomId]: 'เกิดข้อผิดพลาดในการบันทึก'
-      }));
-      toast.error(`เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์ห้อง ${room.number}`);
+      console.error('Error saving meter reading:', error);
+      setErrors(prev => ({ ...prev, [roomId]: 'เกิดข้อผิดพลาดในการบันทึก' }));
     } finally {
       setSavingRoom(null);
     }
   };
 
-  // เพิ่มฟังก์ชันสำหรับบันทึกทั้งหมด
-  const handleSaveAll = async () => {
-    if (Object.keys(unsavedReadings).length === 0) {
-      toast.info('ไม่มีข้อมูลที่ต้องบันทึก');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      const failedRooms: string[] = [];
-
-      for (const [roomId, currentReading] of Object.entries(unsavedReadings)) {
-        const room = rooms.find(r => r.id === roomId);
-        if (!room) continue;
-
-        const previousReading = previousReadings[roomId] || room.initialMeterReading || 0;
-        const validation = validateMeterReading(currentReading.toString(), previousReading);
-
-        if (!validation.isValid) {
-          failedRooms.push(`${room.number} (${validation.error})`);
-          continue;
-        }
-
-        try {
-          const result = await saveMeterReading(selectedDormitory, {
-            roomId,
-            previousReading,
-            currentReading,
-            readingDate: new Date().toISOString(),
-            type: 'electric'
-          });
-
-          if (result.success) {
-            setMeterReadings(prev => ({
-              ...prev,
-              [roomId]: currentReading
-            }));
-            setPreviousReadings(prev => ({
-              ...prev,
-              [roomId]: currentReading
-            }));
-          } else {
-            failedRooms.push(`${room.number} (${result.error || 'เกิดข้อผิดพลาดในการบันทึก'})`);
-          }
-        } catch (error) {
-          console.error(`Error saving meter reading for room ${room.number}:`, error);
-          failedRooms.push(room.number);
-        }
+  // ฟังก์ชันสำหรับย้ายไปช่องถัดไป
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, currentIndex: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const inputs = document.querySelectorAll<HTMLInputElement>('input[type="number"]');
+      const nextInput = inputs[currentIndex + 1];
+      if (nextInput) {
+        nextInput.focus();
       }
-
-      if (failedRooms.length > 0) {
-        toast.error(`ไม่สามารถบันทึกค่ามิเตอร์ของห้อง: ${failedRooms.join(', ')}`);
-      } else {
-        setUnsavedReadings({});
-        setIsModified(false);
-        toast.success('บันทึกค่ามิเตอร์ทั้งหมดเรียบร้อย');
-      }
-    } catch (error) {
-      console.error('Error saving all readings:', error);
-      toast.error('เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -401,31 +244,6 @@ export default function MeterReadingPage() {
               <CardTitle>จดมิเตอร์ไฟ</CardTitle>
               <CardDescription>บันทึกค่ามิเตอร์ไฟฟ้าของแต่ละห้อง</CardDescription>
             </div>
-            {/* เพิ่มปุ่มบันทึกทั้งหมด */}
-            <button
-              onClick={handleSaveAll}
-              disabled={isSaving || Object.keys(unsavedReadings).length === 0}
-              className={cn(
-                "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                "px-4 py-2 h-9",
-                isSaving || Object.keys(unsavedReadings).length === 0
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-              )}
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  กำลังบันทึก...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  บันทึกทั้งหมด {Object.keys(unsavedReadings).length > 0 && `(${Object.keys(unsavedReadings).length})`}
-                </>
-              )}
-            </button>
           </div>
         </CardHeader>
         <CardContent>
@@ -473,39 +291,57 @@ export default function MeterReadingPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      เลขห้อง
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('number')}
+                    >
+                      เลขห้อง {getSortIcon('number')}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ผู้เช่า
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('dormitoryName')}
+                    >
+                      หอพัก {getSortIcon('dormitoryName')}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ค่ามิเตอร์ครั้งก่อน
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('tenantName')}
+                    >
+                      ผู้เช่า {getSortIcon('tenantName')}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ค่ามิเตอร์ครั้งนี้
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('previousReading')}
+                    >
+                      ค่ามิเตอร์ครั้งก่อน {getSortIcon('previousReading')}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      สถานะการบันทึก
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('currentReading')}
+                    >
+                      ค่ามิเตอร์ครั้งนี้ {getSortIcon('currentReading')}
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      จำนวนหน่วยที่ใช้
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSort('unitsUsed')}
+                    >
+                      จำนวนหน่วยที่ใช้ {getSortIcon('unitsUsed')}
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {rooms.length === 0 ? (
+                  {sortedRooms.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                      <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                         ไม่พบข้อมูล
                       </td>
                     </tr>
                   ) : (
-                    rooms.map((room) => {
+                    sortedRooms.map((room, index) => {
                       const previousReading = previousReadings[room.id] || 0;
                       const currentReading = meterReadings[room.id] || '';
-                      const unitsUsed = currentReading ? currentReading - previousReading : 0;
-                      const isSaved = typeof meterReadings[room.id] === 'number' && !errors[room.id];
+                      const unitsUsed = currentReading ? parseFloat(currentReading.toString()) - previousReading : 0;
+                      const dormitory = dormitories.find(d => d.id === room.dormitoryId);
 
                       return (
                         <tr key={room.id}>
@@ -513,7 +349,10 @@ export default function MeterReadingPage() {
                             {room.number}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {room.tenantName || '-'}
+                            {dormitory?.name || '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {tenants[room.number] || '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {previousReading}
@@ -523,14 +362,20 @@ export default function MeterReadingPage() {
                               <input
                                 type="number"
                                 value={currentReading}
-                                onChange={(e) => handleMeterReadingChange(room.id, e.target.value)}
+                                onChange={(e) => setMeterReadings(prev => ({
+                                  ...prev,
+                                  [room.id]: parseFloat(e.target.value)
+                                }))}
+                                onKeyDown={(e) => handleKeyDown(e, index)}
+                                onBlur={(e) => {
+                                  if (e.target.value) {
+                                    handleSave(room.id, parseFloat(e.target.value));
+                                  }
+                                }}
                                 min={previousReading}
                                 className={cn(
                                   "block w-32 rounded-md border shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 transition-colors",
-                                  errors[room.id] ? "border-red-500 bg-red-50" : 
-                                  isSaved
-                                    ? "bg-gray-100 border-gray-200 text-gray-700"
-                                    : "bg-white border-gray-300 hover:bg-gray-50"
+                                  errors[room.id] ? "border-red-500 bg-red-50" : "border-gray-300"
                                 )}
                                 placeholder="กรอกค่ามิเตอร์"
                                 disabled={savingRoom === room.number}
@@ -545,19 +390,8 @@ export default function MeterReadingPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {isSaved ? (
-                              <div className="flex items-center space-x-2">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  บันทึกแล้ว: {currentReading}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {unitsUsed > 0 ? unitsUsed : '-'}
+                            {unitsUsed > 0 ? unitsUsed.toFixed(2) : '-'}
                           </td>
                         </tr>
                       );
