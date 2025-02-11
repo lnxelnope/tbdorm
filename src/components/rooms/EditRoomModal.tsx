@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Room, RoomType } from "@/types/dormitory";
-import { updateRoom, getRooms } from "@/lib/firebase/firebaseUtils";
+import { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
+import { updateRoom, getRooms, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 
 interface EditRoomModalProps {
@@ -14,24 +14,43 @@ interface EditRoomModalProps {
   totalFloors: number;
 }
 
+interface FormData {
+  number: string;
+  floor: number;
+  roomType: string;
+  status: Room['status'];
+  initialMeterReading: string;
+  additionalServices: string[];
+}
+
 export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dormitoryId, totalFloors }: EditRoomModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allRooms, setAllRooms] = useState<Room[]>([]);
-  const [formData, setFormData] = useState({
+  const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
+  const [formData, setFormData] = useState<FormData>({
     number: room.number,
     floor: room.floor,
     roomType: room.roomType,
-    hasAirConditioner: room.hasAirConditioner,
-    hasParking: room.hasParking,
     status: room.status,
-    initialMeterReading: room.initialMeterReading || 0,
+    initialMeterReading: room.initialMeterReading?.toString() || "0",
+    additionalServices: room.additionalServices || [],
   });
+
+  useEffect(() => {
+    const fetchDormitoryConfig = async () => {
+      const result = await getDormitory(dormitoryId);
+      if (result.success && result.data?.config) {
+        setDormitoryConfig(result.data.config);
+      }
+    };
+    fetchDormitoryConfig();
+  }, [dormitoryId]);
 
   useEffect(() => {
     const loadRooms = async () => {
       try {
         const result = await getRooms(dormitoryId);
-        if (result.success) {
+        if (result.success && result.data) {
           const availableRooms = result.data.filter(r => 
             r.id === room.id || r.status === 'available'
           );
@@ -71,17 +90,22 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
     try {
       setIsSubmitting(true);
 
-      const result = await updateRoom(dormitoryId, room.id, {
-        ...formData,
-        number: formData.number.trim(),
-      });
+      const updatedRoom: Room = {
+        ...room,
+        number: formData.number,
+        floor: formData.floor,
+        roomType: formData.roomType,
+        status: formData.status,
+        initialMeterReading: parseFloat(formData.initialMeterReading) || 0,
+        additionalServices: formData.additionalServices,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const result = await updateRoom(dormitoryId, room.id, updatedRoom);
 
       if (result.success) {
         toast.success("แก้ไขห้องพักเรียบร้อย");
-        onSuccess({
-          ...room,
-          ...formData,
-        });
+        onSuccess(updatedRoom);
       } else {
         toast.error("ไม่สามารถแก้ไขห้องพักได้");
       }
@@ -98,6 +122,15 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
     setFormData((prev) => ({
       ...prev,
       [name]: value,
+    }));
+  };
+
+  const handleAdditionalServiceChange = (serviceId: string, checked: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      additionalServices: checked 
+        ? [...prev.additionalServices, serviceId]
+        : prev.additionalServices.filter(id => id !== serviceId)
     }));
   };
 
@@ -206,35 +239,6 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.hasAirConditioner}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      hasAirConditioner: e.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-600">แอร์</span>
-              </label>
-
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.hasParking}
-                  onChange={(e) =>
-                    setFormData({ ...formData, hasParking: e.target.checked })
-                  }
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-600">ที่จอดรถ</span>
-              </label>
-            </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 ค่ามิเตอร์เริ่มต้น
@@ -248,6 +252,25 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
                 className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
                 placeholder="ค่ามิเตอร์เริ่มต้น"
               />
+            </div>
+
+            <div className="space-y-4 mt-4">
+              <h3 className="text-sm font-medium text-gray-900">ค่าบริการเพิ่มเติม</h3>
+              <div className="space-y-2">
+                {dormitoryConfig?.additionalFees?.items?.map((item) => (
+                  <label key={item.id} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.additionalServices.includes(item.id)}
+                      onChange={(e) => handleAdditionalServiceChange(item.id, e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="ml-2 text-sm text-gray-600">
+                      {item.name} ({item.amount.toLocaleString()} บาท)
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end space-x-3">

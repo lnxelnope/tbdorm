@@ -7,130 +7,79 @@ import Link from "next/link";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
 import { toast } from "sonner";
-import { RoomType } from "@/types/dormitory";
+import { RoomType, AdditionalFees, BillingConditions } from "@/types/dormitory";
 import { getDormitory, updateDormitory } from '@/lib/firebase/firebaseUtils';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
 
 interface Config {
   roomTypes: Record<string, RoomType>;
-  additionalFees: {
-    airConditioner: number | null;
-    parking: number | null;
-    floorRates: Record<string, number>;
-    utilities: {
-      water: {
-        perPerson: number | null;
-      };
-      electric: {
-        unit: number | null;
-      };
-    };
-  };
-}
-
-interface DormitoryData {
-  config: Config;
+  additionalFees: AdditionalFees;
   dueDate?: number;
+  billingConditions?: BillingConditions;
 }
 
-// เพิ่ม interface สำหรับเงื่อนไขการออกบิล
-interface BillingConditions {
-  allowedDaysBeforeDueDate: number; // จำนวนวันก่อนถึงกำหนดที่สามารถออกบิลได้
-  requireMeterReading: boolean; // ต้องจดมิเตอร์ก่อนออกบิลหรือไม่
-  allowPartialBilling: boolean; // อนุญาตให้ออกบิลบางส่วนหรือไม่
-  minimumStayForBilling: number; // จำนวนวันขั้นต่ำที่ต้องพักก่อนออกบิล
-  gracePeriod: number; // ระยะเวลาผ่อนผันการชำระ (วัน)
-  lateFeeRate: number; // อัตราค่าปรับจ่ายช้า (%)
-  autoGenerateBill: boolean; // สร้างบิลอัตโนมัติเมื่อถึงกำหนด
-}
-
-export default function DormitoryConfigPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [config, setConfig] = useState<Config>({
-    roomTypes: {},
-    additionalFees: {
-      airConditioner: null,
-      parking: null,
-      floorRates: {
-        "1": null,
-        "2": null
-      },
-      utilities: {
-        water: {
-          perPerson: null
-        },
-        electric: {
-          unit: null
-        }
-      }
+const defaultConfig: Config = {
+  roomTypes: {},
+  additionalFees: {
+    items: [],
+    utilities: {
+      water: { perPerson: null },
+      electric: { unit: null }
     }
-  });
-  const [dueDate, setDueDate] = useState<number>(5); // default to 5th of month
-  const [billingConditions, setBillingConditions] = useState<BillingConditions>({
+  },
+  dueDate: 5,
+  billingConditions: {
     allowedDaysBeforeDueDate: 0,
     requireMeterReading: false,
+    waterBillingType: "perUnit",
+    electricBillingType: "perUnit",
     allowPartialBilling: false,
     minimumStayForBilling: 0,
     gracePeriod: 0,
     lateFeeRate: 0,
-    autoGenerateBill: false,
-  });
+    autoGenerateBill: false
+  }
+};
+
+export default function DormitoryConfigPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [config, setConfig] = useState<Config>(defaultConfig);
+  const [additionalFees, setAdditionalFees] = useState<AdditionalFees>(defaultConfig.additionalFees);
+  const [totalFloors, setTotalFloors] = useState(1);
 
   // แปลง roomTypes object เป็น array
-  const roomTypesArray = Object.entries(config.roomTypes).map(([roomId, type]) => ({
+  const roomTypesArray = config ? Object.entries(config.roomTypes).map(([id, type]) => ({
     ...type,
-  }));
+    id
+  })) : [];
 
   useEffect(() => {
-    const fetchDormitory = async () => {
+    const loadDormitory = async () => {
       try {
-        const docRef = doc(db, "dormitories", params.id);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setConfig(data.config || {
-            roomTypes: {},
-            additionalFees: {
-              airConditioner: null,
-              parking: null,
-              floorRates: {
-                "1": null,
-                "2": null
-              },
-              utilities: {
-                water: {
-                  perPerson: null
-                },
-                electric: {
-                  unit: null
-                }
-              }
-            },
-          });
-          setDueDate(data.dueDate || 5);
-          setBillingConditions(data.billingConditions || {
-            allowedDaysBeforeDueDate: 0,
-            requireMeterReading: false,
-            allowPartialBilling: false,
-            minimumStayForBilling: 0,
-            gracePeriod: 0,
-            lateFeeRate: 0,
-            autoGenerateBill: false,
-          });
+        const result = await getDormitory(params.id);
+        if (result.success && result.data) {
+          const dormitory = result.data;
+          setConfig(dormitory.config || defaultConfig);
+          setAdditionalFees(dormitory.config?.additionalFees || defaultConfig.additionalFees);
+          // ตั้งค่าจำนวนชั้นจากข้อมูลหอพัก
+          setTotalFloors(dormitory.totalFloors || 1);
         }
       } catch (error) {
-        console.error("Error fetching dormitory:", error);
-        toast.error("ไม่สามารถโหลดข้อมูลหอพักได้");
+        console.error("Error loading dormitory:", error);
+        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลหอพัก");
       } finally {
         setIsInitialLoading(false);
       }
     };
 
-    fetchDormitory();
+    loadDormitory();
   }, [params.id]);
 
   const handleAddRoomType = () => {
@@ -139,18 +88,16 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       id: newId,
       name: "",
       basePrice: 0,
-      isDefault: false,
-      airConditionerFee: 500,
-      parkingFee: 500,
+      isDefault: false
     };
     
-    setConfig({
-      ...config,
+    setConfig(prev => ({
+      ...prev,
       roomTypes: {
-        ...config.roomTypes,
+        ...prev.roomTypes,
         [newId]: newRoomType,
       },
-    });
+    }));
   };
 
   const handleRemoveRoomType = (id: string) => {
@@ -172,10 +119,10 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       };
     }
 
-    setConfig({
-      ...config,
+    setConfig(prev => ({
+      ...prev,
       roomTypes: newRoomTypes,
-    });
+    }));
   };
 
   const handleRoomTypeChange = (id: string, field: keyof RoomType, value: any) => {
@@ -191,8 +138,8 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         }
       });
       
-      setConfig({
-        ...config,
+      setConfig(prev => ({
+        ...prev,
         roomTypes: {
           ...newRoomTypes,
           [id]: {
@@ -200,10 +147,10 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
             [field]: value,
           },
         },
-      });
+      }));
     } else {
-      setConfig({
-        ...config,
+      setConfig(prev => ({
+        ...prev,
         roomTypes: {
           ...config.roomTypes,
           [id]: {
@@ -211,50 +158,129 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
             [field]: value,
           },
         },
+      }));
+    }
+  };
+
+  const handleFeeItemChange = (index: number, field: 'name' | 'amount', value: string) => {
+    const newItems = [...additionalFees.items];
+    if (field === 'name') {
+      newItems[index] = { ...newItems[index], name: value };
+    } else {
+      newItems[index] = { ...newItems[index], amount: parseFloat(value) || 0 };
+    }
+
+    setAdditionalFees({
+      ...additionalFees,
+      items: newItems
+    });
+  };
+
+  const handleAddFeeItem = () => {
+    setAdditionalFees(prev => ({
+      ...prev,
+      items: [
+        ...(prev.items || []),
+        {
+          id: crypto.randomUUID(),
+          name: '',
+          amount: 0
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveFeeItem = (index: number) => {
+    const newItems = [...additionalFees.items];
+    newItems.splice(index, 1);
+    setAdditionalFees({
+      ...additionalFees,
+      items: newItems
+    });
+  };
+
+  const handleUtilityRateChange = (type: 'water' | 'electric', value: string) => {
+    if (type === 'water') {
+      setAdditionalFees({
+        ...additionalFees,
+        utilities: {
+          ...additionalFees.utilities,
+          water: {
+            perPerson: parseFloat(value) || null
+          }
+        }
+      });
+    } else {
+      setAdditionalFees({
+        ...additionalFees,
+        utilities: {
+          ...additionalFees.utilities,
+          electric: {
+            unit: parseFloat(value) || null
+          }
+        }
       });
     }
   };
 
-  const handleSave = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
     try {
-      setIsLoading(true);
-
-      // ตรวจสอบว่ามีห้องที่เป็น default อย่างน้อย 1 ห้อง
-      const hasDefaultRoom = roomTypesArray.some(type => type.isDefault);
-      if (!hasDefaultRoom) {
-        toast.error("กรุณาเลือกรูปแบบห้องเริ่มต้นอย่างน้อย 1 รูปแบบ");
-        return;
-      }
-
-      // ตรวจสอบว่าทุกห้องมีชื่อ
-      const hasEmptyName = roomTypesArray.some(type => !type.name.trim());
-      if (hasEmptyName) {
-        toast.error("กรุณากรอกชื่อรูปแบบห้องให้ครบทุกห้อง");
-        return;
-      }
-
-      const updateData: Partial<DormitoryData> = {
-        config,
-        dueDate,
-        billingConditions,
-      };
-
-      await updateDormitory(params.id, updateData);
+      setIsSaving(true);
+      const result = await updateDormitory(params.id, {
+        config: {
+          roomTypes: config.roomTypes,
+          additionalFees,
+          dueDate: config.dueDate,
+          billingConditions: config.billingConditions
+        }
+      });
       
-      toast.success("บันทึกการตั้งค่าเรียบร้อย");
-      router.push("/dormitories");
+      if (result.success) {
+        toast.success("บันทึกการตั้งค่าเรียบร้อยแล้ว");
+        router.refresh();
+      } else {
+        toast.error(result.error || "เกิดข้อผิดพลาดในการบันทึกการตั้งค่า");
+      }
     } catch (error) {
-      console.error("Error saving config:", error);
-      toast.error("เกิดข้อผิดพลาดในการบันทึก");
+      console.error("Error updating config:", error);
+      toast.error("เกิดข้อผิดพลาดในการบันทึกการตั้งค่า");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
   const handleBillingConditionChange = (field: keyof BillingConditions, value: any) => {
-    setBillingConditions(prev => ({
+    if (!config.billingConditions) return;
+
+    setConfig(prev => ({
       ...prev,
-      [field]: value,
+      billingConditions: {
+        ...prev.billingConditions!,
+        [field]: value
+      }
+    }));
+  };
+
+  const handleDueDateChange = (value: string) => {
+    const newDueDate = parseInt(value);
+    if (isNaN(newDueDate) || newDueDate < 1 || newDueDate > 31) return;
+
+    setConfig(prev => ({
+      ...prev,
+      dueDate: newDueDate
+    }));
+  };
+
+  const handleFloorRateChange = (floor: number, value: string) => {
+    const numValue = value === '' ? 0 : parseFloat(value);
+    setAdditionalFees(prev => ({
+      ...prev,
+      floorRates: {
+        ...prev.floorRates,
+        [floor.toString()]: numValue
+      }
     }));
   };
 
@@ -291,12 +317,12 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
             </p>
           </div>
           <button
-            onClick={handleSave}
-            disabled={isLoading}
+            onClick={handleSubmit}
+            disabled={isSaving}
             className="flex items-center px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg hover:from-blue-700 hover:to-blue-800 shadow-sm transition-all duration-150 ease-in-out hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4 mr-2" />
-            {isLoading ? "กำลังบันทึก..." : "บันทึก"}
+            {isSaving ? "กำลังบันทึก..." : "บันทึก"}
           </button>
         </div>
       </div>
@@ -371,127 +397,86 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       {/* ค่าบริการเพิ่มเติม */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">
-            ค่าบริการเพิ่มเติม
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-gray-900">
+              ค่าบริการเพิ่มเติม
+            </h2>
+            <button
+              onClick={handleAddFeeItem}
+              className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              เพิ่มค่าบริการ
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                ค่าบริการเครื่องปรับอากาศ
-              </label>
+        <div className="p-6 space-y-4">
+          {additionalFees?.items?.map((item, index) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-4 p-4 border-2 border-gray-100 rounded-lg hover:border-blue-100 transition-colors duration-150 bg-gray-50 hover:bg-blue-50/20"
+            >
+              <input
+                type="text"
+                value={item.name}
+                onChange={(e) => handleFeeItemChange(index, 'name', e.target.value)}
+                placeholder="ชื่อค่าบริการ"
+                className="flex-1 text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+              />
               <div className="relative">
                 <input
                   type="number"
                   min="0"
                   step="any"
-                  value={config?.additionalFees?.airConditioner ?? ''}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      additionalFees: {
-                        ...config.additionalFees,
-                        airConditioner: e.target.value === '' ? null : Number(e.target.value),
-                      },
-                    })
-                  }
-                  placeholder="ค่าบริการ"
-                  className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+                  value={item.amount.toString()}
+                  onChange={(e) => handleFeeItemChange(index, 'amount', e.target.value)}
+                  placeholder="จำนวนเงิน"
+                  className="w-32 text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                 />
                 <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
               </div>
+              <button
+                onClick={() => handleRemoveFeeItem(index)}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-150"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
+          ))}
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                ค่าที่จอดรถส่วนตัว
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={config?.additionalFees?.parking ?? ''}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      additionalFees: {
-                        ...config.additionalFees,
-                        parking: e.target.value === '' ? null : Number(e.target.value),
-                      },
-                    })
-                  }
-                  placeholder="ค่าบริการ"
-                  className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
-                />
-                <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
-              </div>
-            </div>
-          </div>
+      {/* ค่าห้องเพิ่มเติมตามชั้น */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900">
+            ค่าห้องเพิ่มเติมตามชั้น
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            กำหนดค่าห้องเพิ่มเติมหรือส่วนลดตามชั้น (สามารถใส่ค่าติดลบเพื่อลดราคาได้)
+          </p>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              ค่าตามชั้น
-            </label>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="relative">
-                <label className="block text-sm text-gray-600 mb-1">
-                  ชั้น 1
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
+              <div key={floor} className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  ชั้น {floor}
                 </label>
                 <div className="relative">
                   <input
                     type="number"
-                    value={config?.additionalFees?.floorRates?.["1"] ?? ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setConfig(prev => ({
-                        ...prev,
-                        additionalFees: {
-                          ...prev.additionalFees,
-                          floorRates: {
-                            ...prev.additionalFees.floorRates,
-                            "1": value === '' ? null : Number(value),
-                          },
-                        },
-                      }));
-                    }}
-                    placeholder="ค่าตามชั้น"
+                    value={additionalFees?.floorRates?.[floor.toString()] ?? ''}
+                    onChange={(e) => handleFloorRateChange(floor, e.target.value)}
+                    placeholder="0"
                     className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
                   <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
                 </div>
               </div>
-
-              <div className="relative">
-                <label className="block text-sm text-gray-600 mb-1">
-                  ชั้น 2
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={config?.additionalFees?.floorRates?.["2"] ?? ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setConfig(prev => ({
-                        ...prev,
-                        additionalFees: {
-                          ...prev.additionalFees,
-                          floorRates: {
-                            ...prev.additionalFees.floorRates,
-                            "2": value === '' ? null : Number(value),
-                          },
-                        },
-                      }));
-                    }}
-                    placeholder="ค่าตามชั้น"
-                    className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
-                  />
-                  <span className="absolute right-3 top-2 text-sm text-gray-500">บาท</span>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -518,21 +503,8 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     type="number"
                     min="0"
                     step="any"
-                    value={config?.additionalFees?.utilities?.water?.perPerson ?? ''}
-                    onChange={(e) =>
-                      setConfig({
-                        ...config,
-                        additionalFees: {
-                          ...config.additionalFees,
-                          utilities: {
-                            ...config.additionalFees.utilities,
-                            water: {
-                              perPerson: e.target.value === '' ? null : Number(e.target.value),
-                            },
-                          },
-                        },
-                      })
-                    }
+                    value={additionalFees?.utilities?.water?.perPerson?.toString() || ''}
+                    onChange={(e) => handleUtilityRateChange('water', e.target.value)}
                     placeholder="ค่าน้ำต่อคน"
                     className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
@@ -553,21 +525,8 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                     type="number"
                     min="0"
                     step="any"
-                    value={config?.additionalFees?.utilities?.electric?.unit ?? ''}
-                    onChange={(e) =>
-                      setConfig({
-                        ...config,
-                        additionalFees: {
-                          ...config.additionalFees,
-                          utilities: {
-                            ...config.additionalFees.utilities,
-                            electric: {
-                              unit: e.target.value === '' ? null : Number(e.target.value),
-                            },
-                          },
-                        },
-                      })
-                    }
+                    value={additionalFees?.utilities?.electric?.unit?.toString() || ''}
+                    onChange={(e) => handleUtilityRateChange('electric', e.target.value)}
                     placeholder="ค่าไฟต่อหน่วย"
                     className="w-full text-sm bg-yellow-50 border-2 border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
                   />
@@ -587,8 +546,8 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           type="number"
           min="1"
           max="31"
-          value={dueDate}
-          onChange={(e) => setDueDate(parseInt(e.target.value))}
+          value={config.dueDate?.toString() || ''}
+          onChange={(e) => handleDueDateChange(e.target.value)}
           className="w-full max-w-xs p-2 border rounded"
         />
       </div>
@@ -610,7 +569,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
               </div>
               <input
                 type="number"
-                value={billingConditions.allowedDaysBeforeDueDate}
+                value={config.billingConditions?.allowedDaysBeforeDueDate}
                 onChange={(e) => handleBillingConditionChange('allowedDaysBeforeDueDate', parseInt(e.target.value))}
                 className="w-24 rounded-md border-gray-300"
                 min={0}
@@ -624,7 +583,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 <p className="text-sm text-gray-500">ต้องมีการจดมิเตอร์ในเดือนนั้นก่อนจึงจะออกบิลได้</p>
               </div>
               <Switch
-                checked={billingConditions.requireMeterReading}
+                checked={config.billingConditions?.requireMeterReading}
                 onCheckedChange={(checked) => handleBillingConditionChange('requireMeterReading', checked)}
               />
             </div>
@@ -635,7 +594,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 <p className="text-sm text-gray-500">สามารถออกบิลเฉพาะบางรายการได้</p>
               </div>
               <Switch
-                checked={billingConditions.allowPartialBilling}
+                checked={config.billingConditions?.allowPartialBilling}
                 onCheckedChange={(checked) => handleBillingConditionChange('allowPartialBilling', checked)}
               />
             </div>
@@ -647,7 +606,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
               </div>
               <input
                 type="number"
-                value={billingConditions.minimumStayForBilling}
+                value={config.billingConditions?.minimumStayForBilling}
                 onChange={(e) => handleBillingConditionChange('minimumStayForBilling', parseInt(e.target.value))}
                 className="w-24 rounded-md border-gray-300"
                 min={0}
@@ -661,7 +620,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
               </div>
               <input
                 type="number"
-                value={billingConditions.gracePeriod}
+                value={config.billingConditions?.gracePeriod}
                 onChange={(e) => handleBillingConditionChange('gracePeriod', parseInt(e.target.value))}
                 className="w-24 rounded-md border-gray-300"
                 min={0}
@@ -675,7 +634,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
               </div>
               <input
                 type="number"
-                value={billingConditions.lateFeeRate}
+                value={config.billingConditions?.lateFeeRate}
                 onChange={(e) => handleBillingConditionChange('lateFeeRate', parseFloat(e.target.value))}
                 className="w-24 rounded-md border-gray-300"
                 min={0}
@@ -689,7 +648,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 <p className="text-sm text-gray-500">สร้างบิลโดยอัตโนมัติเมื่อถึงกำหนด</p>
               </div>
               <Switch
-                checked={billingConditions.autoGenerateBill}
+                checked={config.billingConditions?.autoGenerateBill}
                 onCheckedChange={(checked) => handleBillingConditionChange('autoGenerateBill', checked)}
               />
             </div>

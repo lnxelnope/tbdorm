@@ -13,11 +13,6 @@ import { db } from "@/lib/firebase/firebase";
 
 interface DormitoryConfig {
   additionalFees: {
-    airConditioner: number | null;
-    parking: number | null;
-    floorRates: {
-      [key: string]: number | null;
-    };
     utilities: {
       water: {
         perPerson: number | null;
@@ -26,7 +21,24 @@ interface DormitoryConfig {
         unit: number | null;
       };
     };
+    items: {
+      id: string;
+      name: string;
+      amount: number;
+    }[];
+    floorRates: {
+      [key: string]: number | null;
+    };
   };
+}
+
+interface FormData {
+  number: string;
+  floor: number;
+  roomType: string;
+  status: Room['status'];
+  initialMeterReading: number;
+  additionalServices: string[];
 }
 
 // Modal Component
@@ -48,13 +60,13 @@ function EditRoomModal({
   onSuccess: () => void;
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     number: room.number,
     floor: room.floor,
     roomType: room.roomType,
-    hasAirConditioner: room.hasAirConditioner,
-    hasParking: room.hasParking,
-    status: room.status as Room["status"],
+    status: room.status,
+    initialMeterReading: room.initialMeterReading || 0,
+    additionalServices: room.additionalServices || []
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -197,32 +209,14 @@ function EditRoomModal({
           </div>
 
           <div className="space-y-2">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={formData.hasAirConditioner}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    hasAirConditioner: e.target.checked,
-                  })
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-600">แอร์</span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={formData.hasParking}
-                onChange={(e) =>
-                  setFormData({ ...formData, hasParking: e.target.checked })
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-600">ที่จอดรถ</span>
-            </label>
+            {room.additionalServices?.map(serviceId => {
+              const service = dormitoryConfig?.additionalFees?.items?.find(item => item.id === serviceId);
+              return service && (
+                <span key={service.id} className="inline-flex items-center">
+                  <span className="ml-2">{service.name}</span>
+                </span>
+              );
+            })}
           </div>
 
           <div className="flex justify-end space-x-3 mt-6">
@@ -259,13 +253,16 @@ export default function RoomDetailsPage() {
   const [totalFloors, setTotalFloors] = useState(1);
   const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig>({
     additionalFees: {
-      airConditioner: null,
-      parking: null,
-      floorRates: {},
       utilities: {
-        water: { perPerson: null },
-        electric: { unit: null }
-      }
+        water: {
+          perPerson: null
+        },
+        electric: {
+          unit: null
+        }
+      },
+      items: [],
+      floorRates: {}
     }
   });
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
@@ -301,9 +298,6 @@ export default function RoomDetailsPage() {
         setTotalFloors(dormitoryResult.data.totalFloors || 1);
         setDormitoryConfig({
           additionalFees: {
-            airConditioner: dormitoryResult.data.config?.additionalFees?.airConditioner ?? null,
-            parking: dormitoryResult.data.config?.additionalFees?.parking ?? null,
-            floorRates: dormitoryResult.data.config?.additionalFees?.floorRates || {},
             utilities: {
               water: {
                 perPerson: dormitoryResult.data.config?.additionalFees?.utilities?.water?.perPerson ?? null
@@ -311,7 +305,9 @@ export default function RoomDetailsPage() {
               electric: {
                 unit: dormitoryResult.data.config?.additionalFees?.utilities?.electric?.unit ?? null
               }
-            }
+            },
+            items: dormitoryResult.data.config?.additionalFees?.items || [],
+            floorRates: dormitoryResult.data.config?.additionalFees?.floorRates || {}
           }
         });
       }
@@ -417,22 +413,14 @@ export default function RoomDetailsPage() {
               <dt className="text-sm font-medium text-gray-500">สิ่งอำนวยความสะดวก</dt>
               <dd className="mt-1 text-sm text-gray-900">
                 <div className="flex gap-2">
-                  {room.hasAirConditioner && (
-                    <span className="inline-flex items-center">
-                      <svg className="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      แอร์
-                    </span>
-                  )}
-                  {room.hasParking && (
-                    <span className="inline-flex items-center">
-                      <svg className="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                      ที่จอดรถ
-                    </span>
-                  )}
+                  {room.additionalServices?.map(serviceId => {
+                    const service = dormitoryConfig?.additionalFees?.items?.find(item => item.id === serviceId);
+                    return service && (
+                      <span key={service.id} className="inline-flex items-center">
+                        <span className="ml-2">{service.name}</span>
+                      </span>
+                    );
+                  })}
                 </div>
               </dd>
             </div>
@@ -459,16 +447,17 @@ export default function RoomDetailsPage() {
                     ฿{Math.abs(dormitoryConfig.additionalFees.floorRates[room.floor.toString()]!).toLocaleString()}
                   </div>
                 )}
-                {room.hasAirConditioner && dormitoryConfig.additionalFees.airConditioner && (
-                  <div className="text-sm text-green-600">
-                    <span className="font-medium">ค่าแอร์:</span> +฿{dormitoryConfig.additionalFees.airConditioner.toLocaleString()}
-                  </div>
-                )}
-                {room.hasParking && dormitoryConfig.additionalFees.parking && (
-                  <div className="text-sm text-purple-600">
-                    <span className="font-medium">ที่จอดรถ:</span> +฿{dormitoryConfig.additionalFees.parking.toLocaleString()}
-                  </div>
-                )}
+                {room.additionalServices?.map(serviceId => {
+                  const service = dormitoryConfig.additionalFees.items.find(item => item.id === serviceId);
+                  if (service) {
+                    return (
+                      <div key={service.id} className="text-sm text-green-600">
+                        <span className="font-medium">{service.name}:</span> +฿{service.amount.toLocaleString()}
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
               </dd>
             </div>
           </dl>

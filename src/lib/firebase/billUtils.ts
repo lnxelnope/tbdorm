@@ -2,65 +2,70 @@ import { db } from './firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, getDoc, writeBatch, limit } from 'firebase/firestore';
 import { Bill, MeterReading, PaymentReceipt, PromptPayConfig, BankAccount, Payment, ApiResponse, BillSummary } from '@/types/bill';
 
-// Bills
-export const createBill = async (dormitoryId: string, bill: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => {
-  try {
-    const billData = {
-      ...bill,
-      dormitoryId,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      paidAmount: 0,
-      remainingAmount: bill.totalAmount,
-      payments: [],
-      notificationsSent: {
-        initial: false,
-        reminder: false,
-        overdue: false
-      }
-    };
+interface CreateBillData {
+  dormitoryId: string;
+  roomNumber: string;
+  tenantName: string;
+  month: number;
+  year: number;
+  dueDate: Date;
+  status: string;
+  items: any[];
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  payments: any[];
+  notificationsSent: {
+    initial: boolean;
+    reminder: boolean;
+    overdue: boolean;
+  };
+}
 
-    const docRef = await addDoc(collection(db, `dormitories/${dormitoryId}/bills`), billData);
-    return { success: true, data: { id: docRef.id, ...billData } };
+// Bills
+export const createBill = async (billData: CreateBillData, dormitoryId: string) => {
+  try {
+    const billsRef = collection(db, 'dormitories', dormitoryId, 'bills');
+    const docRef = await addDoc(billsRef, {
+      ...billData,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    return {
+      success: true,
+      data: { id: docRef.id, ...billData }
+    };
   } catch (error) {
     console.error('Error creating bill:', error);
-    return { success: false, error };
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการสร้างบิล'
+    };
   }
 };
 
-export const getBillsByDormitory = async (dormitoryId: string, filters?: {
-  status?: Bill['status'];
-  month?: number;
-  year?: number;
-}) => {
+export const getBillsByDormitory = async (dormitoryId: string) => {
   try {
-    const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
-    let q = query(billsRef, orderBy('createdAt', 'desc'));
-
-    if (filters?.status) {
-      q = query(q, where('status', '==', filters.status));
-    }
-    if (filters?.month) {
-      q = query(q, where('month', '==', filters.month));
-    }
-    if (filters?.year) {
-      q = query(q, where('year', '==', filters.year));
-    }
+    const billsRef = collection(db, 'dormitories', dormitoryId, 'bills');
+    const q = query(billsRef, orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
     
-    const snapshot = await getDocs(q);
-    const bills = snapshot.docs.map(doc => ({
+    const bills = querySnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt.toDate(),
-      updatedAt: doc.data().updatedAt.toDate(),
-      dueDate: doc.data().dueDate.toDate(),
-      paidAt: doc.data().paidAt?.toDate()
-    })) as Bill[];
+      ...doc.data()
+    }));
 
-    return { success: true, data: bills };
+    return {
+      success: true,
+      data: bills
+    };
   } catch (error) {
     console.error('Error getting bills:', error);
-    return { success: false, error };
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการดึงข้อมูลบิล'
+    };
   }
 };
 

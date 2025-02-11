@@ -3,13 +3,32 @@
 import { useState, useEffect } from "react";
 import { Dialog } from "@headlessui/react";
 import { X } from "lucide-react";
-import type { Dormitory } from '@/types/dormitory';
-import type { Tenant } from '@/types/tenant';
+import type { Dormitory, Tenant, Room } from '@/types/dormitory';
 import { toast } from "sonner";
-import { updateTenant } from "@/lib/firebase/firebaseUtils";
+import { updateTenant, getRooms } from "@/lib/firebase/firebaseUtils";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
-import { getRooms } from "@/lib/firebase/firebaseUtils";
+
+interface FormData {
+  name: string;
+  idCard: string;
+  phone: string;
+  email: string;
+  lineId: string;
+  workplace: string;
+  currentAddress: string;
+  dormitoryId: string;
+  roomId?: string;
+  roomNumber: string;
+  startDate: string;
+  deposit: number;
+  numberOfResidents: number;
+  emergencyContact: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
+}
 
 interface EditTenantModalProps {
   isOpen: boolean;
@@ -27,7 +46,7 @@ export default function EditTenantModal({
   onSuccess,
 }: EditTenantModalProps) {
   const [workplaces, setWorkplaces] = useState<string[]>([]);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     name: tenant.name,
     idCard: tenant.idCard,
     phone: tenant.phone,
@@ -36,6 +55,7 @@ export default function EditTenantModal({
     workplace: tenant.workplace || "",
     currentAddress: tenant.currentAddress,
     dormitoryId: tenant.dormitoryId,
+    roomId: tenant.roomId,
     roomNumber: tenant.roomNumber,
     startDate: tenant.startDate,
     deposit: tenant.deposit,
@@ -61,6 +81,7 @@ export default function EditTenantModal({
       workplace: tenant.workplace || "",
       currentAddress: tenant.currentAddress,
       dormitoryId: tenant.dormitoryId,
+      roomId: tenant.roomId,
       roomNumber: tenant.roomNumber,
       startDate: tenant.startDate,
       deposit: tenant.deposit,
@@ -97,7 +118,7 @@ export default function EditTenantModal({
 
       try {
         const result = await getRooms(formData.dormitoryId);
-        if (result.success) {
+        if (result.success && result.data) {
           const availableRooms = result.data.filter(room => 
             room.status === 'available' || room.number === formData.roomNumber
           );
@@ -105,10 +126,13 @@ export default function EditTenantModal({
             return a.number.localeCompare(b.number, undefined, { numeric: true });
           });
           setAllRooms(sortedRooms);
+        } else {
+          setAllRooms([]);
         }
       } catch (error) {
         console.error('Error loading rooms:', error);
         toast.error('ไม่สามารถโหลดข้อมูลห้องได้');
+        setAllRooms([]);
       }
     };
 

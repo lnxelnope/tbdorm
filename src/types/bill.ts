@@ -23,16 +23,12 @@ export interface Bill {
 }
 
 export interface BillItem {
-  type: 'rent' | 'water' | 'electric' | 'parking' | 'air_conditioner' | 'other';
-  description: string;
+  name: string;
+  type: 'rent' | 'water' | 'electric' | 'other';
   amount: number;
-  quantity?: number;
+  description?: string;
   unitPrice?: number;
-  utilityReading?: {
-    previous: number;
-    current: number;
-    units: number;
-  };
+  units?: number;
 }
 
 export interface MeterReading {

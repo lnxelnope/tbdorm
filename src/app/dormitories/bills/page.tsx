@@ -1,22 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { queryDormitories, getRooms, getDormitory, queryTenants, getLatestMeterReading, getDormitoryConfig } from "@/lib/firebase/firebaseUtils";
-import { getBillsByDormitory } from "@/lib/firebase/billUtils";
-import { Dormitory, Room, Tenant } from "@/types/dormitory";
-import { Bill } from "@/types/bill";
-import { Plus, Search, Loader2, Zap, XCircle, Clock, AlertCircle, AlertTriangle } from "lucide-react";
+import { queryDormitories, getRooms, getDormitory, queryTenants, getLatestMeterReading, getDormitoryConfig, saveMeterReading } from "@/lib/firebase/firebaseUtils";
+import { getBillsByDormitory, createBill, deleteBill } from "@/lib/firebase/billUtils";
+import { Dormitory, Room, Tenant, DormitoryConfig } from "@/types/dormitory";
+import { MeterReading } from "@/types/meter";
+import { Bill, BillItem } from "@/types/bill";
+import { Plus, Search, Loader2, Zap, XCircle, Clock, AlertCircle, AlertTriangle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import CreateBillModal from "./components/CreateBillModal";
 import PaymentModal from "./components/PaymentModal";
 import { useRouter } from "next/navigation";
+import UnrecordedMeterRoom from "./components/UnrecordedMeterRoom";
 
 interface TenantWithBillStatus extends Tenant {
   canCreateBill: boolean;
   daysUntilDue: number;
   hasMeterReading: boolean;
   lastMeterReadingDate?: Date;
+  numberOfOccupants?: number;
+  roomType?: string;
   electricityUsage?: {
     previousReading: number;
     currentReading: number;
@@ -26,7 +30,7 @@ interface TenantWithBillStatus extends Tenant {
 }
 
 export default function BillsPage() {
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState<DormitoryConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -88,7 +92,7 @@ export default function BillsPage() {
   );
 }
 
-function BillsList({ config }) {
+function BillsList({ config }: { config: DormitoryConfig | null }) {
   const [isLoading, setIsLoading] = useState(true);
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
   const [selectedDormitory, setSelectedDormitory] = useState<string>('');
@@ -101,6 +105,14 @@ function BillsList({ config }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [tenants, setTenants] = useState<TenantWithBillStatus[]>([]);
   const router = useRouter();
+  const [showAllTenants, setShowAllTenants] = useState(false);
+
+  // คำนวณยอดรวมสำหรับการแสดงผลและบิล
+  const calculateTotalAmount = (tenant: Tenant, config?: DormitoryConfig) => {
+    return (
+      (dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0)
+    );
+  };
 
   // โหลดข้อมูลหอพักทั้งหมด
   useEffect(() => {
@@ -141,7 +153,7 @@ function BillsList({ config }) {
       try {
         const result = await getBillsByDormitory(selectedDormitory);
         if (result.success && result.data) {
-          setBills(result.data);
+          setBills(result.data as Bill[]);
         }
       } catch (error) {
         console.error("Error loading bills:", error);
@@ -170,8 +182,6 @@ function BillsList({ config }) {
           tenant.status === 'active' && tenant.roomNumber
         );
 
-        console.log('Active tenants:', activeTenantsWithRoom); // เพิ่ม log ตรวจสอบ
-
         const tenantsWithBillStatus = await Promise.all(
           activeTenantsWithRoom.map(async (tenant) => {
             // ดึงข้อมูลมิเตอร์ล่าสุด
@@ -186,7 +196,8 @@ function BillsList({ config }) {
             let electricityUsage = undefined;
 
             if (meterResult.success && meterResult.data) {
-              const readingDate = new Date(meterResult.data.readingDate);
+              const reading = meterResult.data as MeterReading;
+              const readingDate = new Date(reading.readingDate);
               const today = new Date();
               
               hasMeterReading = 
@@ -197,10 +208,10 @@ function BillsList({ config }) {
 
               if (hasMeterReading) {
                 electricityUsage = {
-                  previousReading: meterResult.data.previousReading,
-                  currentReading: meterResult.data.currentReading,
-                  unitsUsed: meterResult.data.unitsUsed,
-                  charge: meterResult.data.unitsUsed * 8 // ใช้ค่าไฟเริ่มต้น 8 บาท/หน่วย
+                  previousReading: reading.previousReading,
+                  currentReading: reading.currentReading,
+                  unitsUsed: reading.unitsUsed,
+                  charge: reading.unitsUsed * (config?.electricityRate || 8)
                 };
               }
             }
@@ -211,11 +222,9 @@ function BillsList({ config }) {
               lastMeterReadingDate,
               electricityUsage,
               canCreateBill: hasMeterReading
-            };
+            } as TenantWithBillStatus;
           })
         );
-
-        console.log('Tenants with bill status:', tenantsWithBillStatus); // เพิ่ม log ตรวจสอบ
 
         setTenants(tenantsWithBillStatus);
       } catch (error) {
@@ -229,14 +238,14 @@ function BillsList({ config }) {
     if (selectedDormitory) {
       fetchTenantsAndDueDate();
     }
-  }, [selectedDormitory]);
+  }, [selectedDormitory, config?.electricityRate]);
 
   const handlePayBill = (bill: Bill) => {
     setSelectedBill(bill);
     setIsPaymentModalOpen(true);
   };
 
-  const handleCreateBill = (tenant: TenantWithBillStatus) => {
+  const handleCreateBill = async (tenant: TenantWithBillStatus) => {
     if (!tenant.hasMeterReading) {
       toast.error("ไม่สามารถสร้างบิลได้เนื่องจากยังไม่ได้จดมิเตอร์");
       return;
@@ -247,8 +256,159 @@ function BillsList({ config }) {
       return;
     }
 
-    // เปลี่ยนเส้นทางไปยัง URL ที่ถูกต้อง
-    router.push(`/dormitories/${selectedDormitory}/bills/create?roomId=${tenant.roomId}`);
+    try {
+      // สร้างรายการในบิล
+      const billItems: BillItem[] = [
+        {
+          type: 'rent',
+          description: 'ค่าเช่าห้องพัก',
+          amount: dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0
+        }
+      ];
+
+      // เพิ่มค่าไฟถ้ามีการจดมิเตอร์
+      if (tenant.electricityUsage) {
+        billItems.push({
+          type: 'electric',
+          description: 'ค่าไฟฟ้า',
+          amount: tenant.electricityUsage.charge,
+          utilityReading: {
+            previous: tenant.electricityUsage.previousReading,
+            current: tenant.electricityUsage.currentReading,
+            units: tenant.electricityUsage.unitsUsed
+          }
+        });
+      }
+
+      // เพิ่มค่าน้ำ (คำนวณตามจำนวนผู้พักอาศัย)
+      billItems.push({
+        type: 'water',
+        description: 'ค่าน้ำประปา',
+        amount: (config?.waterRate || 0) * (tenant.numberOfOccupants || 1)
+      });
+
+      // คำนวณยอดรวมสำหรับการแสดงผลและบิล
+      const billTotal = calculateTotalAmount(tenant, config);
+
+      // สร้างบิลใหม่
+      const newBill = {
+        dormitoryId: selectedDormitory,
+        roomNumber: tenant.roomNumber,
+        tenantName: tenant.name,
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear(),
+        dueDate: new Date(),
+        status: 'pending',
+        items: billItems,
+        totalAmount: billTotal,
+        paidAmount: 0,
+        remainingAmount: billTotal,
+        payments: [],
+        notificationsSent: {
+          initial: false,
+          reminder: false,
+          overdue: false
+        }
+      };
+
+      // บันทึกบิลลงฐานข้อมูล
+      const result = await createBill(newBill, selectedDormitory);
+
+      if (result.success) {
+        toast.success('สร้างบิลเรียบร้อยแล้ว');
+        
+        // อัพเดทข้อมูลบิล
+        const billsResult = await getBillsByDormitory(selectedDormitory);
+        if (billsResult.success && billsResult.data) {
+          setBills(billsResult.data as Bill[]);
+        }
+
+        // อัพเดทรายการผู้เช่า
+        const updatedTenants = tenants.map(t => {
+          if (t.id === tenant.id) {
+            return {
+              ...t,
+              hasMeterReading: false // รีเซ็ตสถานะการจดมิเตอร์
+            };
+          }
+          return t;
+        });
+        setTenants(updatedTenants);
+      } else {
+        toast.error('เกิดข้อผิดพลาดในการสร้างบิล');
+      }
+    } catch (error) {
+      console.error('Error creating bill:', error);
+      toast.error('เกิดข้อผิดพลาดในการสร้างบิล');
+    }
+  };
+
+  const handleEditBill = async (bill: Bill) => {
+    try {
+      // ดึงข้อมูลมิเตอร์ล่าสุดของห้อง
+      const meterResult = await getLatestMeterReading(
+        selectedDormitory,
+        bill.roomNumber,
+        'electric'
+      );
+
+      // เก็บข้อมูลบิลเดิมไว้
+      const originalBillId = bill.id;
+
+      // ลบบิลเดิมออกจากรายการ
+      const updatedBills = bills.filter(b => b.id !== originalBillId);
+      setBills(updatedBills);
+
+      // อัพเดทข้อมูลผู้เช่าให้สามารถสร้างบิลใหม่ได้
+      const updatedTenants = tenants.map(t => {
+        if (t.roomNumber === bill.roomNumber) {
+          const meterData = meterResult.success && meterResult.data ? meterResult.data as MeterReading : null;
+          return {
+            ...t,
+            hasMeterReading: true,
+            electricityUsage: meterData ? {
+              previousReading: meterData.previousReading,
+              currentReading: meterData.currentReading,
+              unitsUsed: meterData.unitsUsed,
+              charge: meterData.unitsUsed * (config?.electricityRate || 8)
+            } : undefined
+          };
+        }
+        return t;
+      });
+
+      setTenants(updatedTenants);
+      
+      // ลบบิลเดิมจากฐานข้อมูล
+      await deleteBill(selectedDormitory, originalBillId);
+
+      toast.success('ย้ายบิลกลับไปแก้ไขเรียบร้อย');
+    } catch (error) {
+      console.error('Error editing bill:', error);
+      toast.error('เกิดข้อผิดพลาดในการแก้ไขบิล');
+    }
+  };
+
+  // เพิ่มฟังก์ชันลบบิล
+  const handleDeleteBill = async (bill: Bill) => {
+    if (!window.confirm('คุณแน่ใจหรือไม่ที่จะลบบิลนี้?')) {
+      return;
+    }
+
+    try {
+      const result = await deleteBill(selectedDormitory, bill.id);
+      if (result.success) {
+        toast.success('ลบบิลเรียบร้อยแล้ว');
+        // อัพเดทรายการบิล
+        const updatedBills = bills.filter(b => b.id !== bill.id);
+        setBills(updatedBills);
+      } else {
+        throw new Error(typeof result.error === 'string' ? result.error : 'เกิดข้อผิดพลาดในการลบบิล');
+      }
+    } catch (error) {
+      console.error('Error deleting bill:', error);
+      toast.error('เกิดข้อผิดพลาดในการลบบิล');
+    }
   };
 
   // กรองข้อมูลบิล
@@ -308,7 +468,7 @@ function BillsList({ config }) {
 
   // ดึงเฉพาะห้องที่มีผู้เช่าและสถานะปกติ
   const activeRooms = tenants.filter(tenant => 
-    tenant.tenantId && tenant.status === 'active'
+    tenant.id && tenant.status === 'active'
   );
 
   const tenantsWithBilling = activeRooms.map(tenant => {
@@ -322,6 +482,146 @@ function BillsList({ config }) {
 
   const statuses = tenantsWithBilling.map(tenant => getBillStatus(tenant, config));
 
+  // กรองผู้เช่าที่สามารถสร้างบิล
+  const tenantsCanCreateBill = tenants
+    .filter(tenant => {
+      // เช็คว่ามีบิลในเดือนปัจจุบันหรือไม่
+      const hasCurrentMonthBill = bills.some(bill => {
+        const today = new Date();
+        return bill.roomNumber === tenant.roomNumber && 
+               bill.month === (today.getMonth() + 1) &&
+               bill.year === today.getFullYear();
+      });
+
+      // แสดงเฉพาะผู้เช่าที่:
+      // 1. ไม่มีบิลในเดือนปัจจุบัน
+      // 2. มีการจดมิเตอร์
+      // 3. สถานะเป็น active
+      // 4. มีข้อมูลการใช้ไฟฟ้า
+      return !hasCurrentMonthBill && 
+             tenant.hasMeterReading && 
+             tenant.status === 'active' &&
+             tenant.electricityUsage !== undefined;
+    })
+    .sort((a, b) => {
+      // เรียงตามเลขห้อง
+      return a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true });
+    });
+
+  // เพิ่ม console.log เพื่อตรวจสอบ
+  console.log('ข้อมูลผู้เช่าทั้งหมด:', tenants.map(t => ({
+    room: t.roomNumber,
+    hasMeter: t.hasMeterReading,
+    hasElectricityUsage: t.electricityUsage !== undefined,
+    status: t.status
+  })));
+
+  // เพิ่มฟังก์ชันสร้างบิลทั้งหมด
+  const handleCreateAllBills = async () => {
+    if (!selectedDormitory || !tenantsCanCreateBill.length) {
+      toast.error('ไม่มีรายการที่สามารถสร้างบิลได้');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      let successCount = 0;
+      let errorCount = 0;
+
+      // สร้างบิลทีละรายการ
+      for (const tenant of tenantsCanCreateBill) {
+        try {
+          // สร้างรายการในบิล
+          const billItems: BillItem[] = [
+            {
+              type: 'rent',
+              description: 'ค่าเช่าห้องพัก',
+              amount: dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0
+            }
+          ];
+
+          if (tenant.electricityUsage) {
+            billItems.push({
+              type: 'electric',
+              description: 'ค่าไฟฟ้า',
+              amount: tenant.electricityUsage.charge,
+              utilityReading: {
+                previous: tenant.electricityUsage.previousReading,
+                current: tenant.electricityUsage.currentReading,
+                units: tenant.electricityUsage.unitsUsed
+              }
+            });
+          }
+
+          billItems.push({
+            type: 'water',
+            description: 'ค่าน้ำประปา',
+            amount: config?.waterRate || 0
+          });
+
+          billItems.push({
+            type: 'other',
+            description: 'ค่าส่วนกลาง',
+            amount: config?.commonFee || 0
+          });
+
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 7);
+
+          const newBill = {
+            dormitoryId: selectedDormitory,
+            roomNumber: tenant.roomNumber,
+            tenantName: tenant.name,
+            month: new Date().getMonth() + 1,
+            year: new Date().getFullYear(),
+            dueDate,
+            status: 'pending',
+            items: billItems,
+            totalAmount: calculateTotalAmount(tenant, config),
+            paidAmount: 0,
+            remainingAmount: calculateTotalAmount(tenant, config),
+            payments: [],
+            notificationsSent: {
+              initial: false,
+              reminder: false,
+              overdue: false
+            }
+          };
+
+          const result = await createBill(newBill, selectedDormitory);
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          console.error('Error creating bill for room', tenant.roomNumber, error);
+          errorCount++;
+        }
+      }
+
+      // อัพเดทข้อมูลบิลและรายการผู้เช่า
+      const billsResult = await getBillsByDormitory(selectedDormitory);
+      if (billsResult.success && billsResult.data) {
+        setBills(billsResult.data as Bill[]);
+      }
+
+      // อัพเดทรายการผู้เช่า
+      const updatedTenants = tenants.map(t => ({
+        ...t,
+        hasMeterReading: false
+      }));
+      setTenants(updatedTenants);
+
+      toast.success(`สร้างบิลสำเร็จ ${successCount} รายการ${errorCount > 0 ? `, ไม่สำเร็จ ${errorCount} รายการ` : ''}`);
+    } catch (error) {
+      console.error('Error creating all bills:', error);
+      toast.error('เกิดข้อผิดพลาดในการสร้างบิล');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <Card>
@@ -331,15 +631,6 @@ function BillsList({ config }) {
               <CardTitle>บิล/ใบแจ้งหนี้</CardTitle>
               <CardDescription>จัดการบิลและใบแจ้งหนี้ทั้งหมด</CardDescription>
             </div>
-            {selectedDormitory && (
-              <button
-                onClick={() => router.push(`/dormitories/${selectedDormitory}/bills/batch`)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                สร้างบิลประจำเดือน
-              </button>
-            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -399,87 +690,202 @@ function BillsList({ config }) {
               </div>
             </div>
 
-            {/* แสดงรายการผู้เช่าที่สามารถสร้างบิลได้ */}
-            <div className="mt-6 space-y-4">
-              <h3 className="text-lg font-medium">รายการผู้เช่าที่สามารถสร้างบิล</h3>
+            {/* ส่วนของผู้เช่าที่ยังไม่ได้จดมิเตอร์ */}
+            <div className="mb-8">
+              <h3 className="text-lg font-medium mb-4">
+                รายการผู้เช่าที่ยังไม่ได้จดมิเตอร์ ({tenants.filter(tenant => 
+                  tenant.status === 'active' && 
+                  (!tenant.electricityUsage || 
+                   tenant.electricityUsage.previousReading === tenant.electricityUsage.currentReading)
+                ).length} ห้อง)
+              </h3>
               <div className="grid gap-4">
-                {tenants.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    ไม่พบรายการผู้เช่าที่สามารถสร้างบิลได้
+                {tenants.filter(tenant => 
+                  tenant.status === 'active' && 
+                  (!tenant.electricityUsage || 
+                   tenant.electricityUsage.previousReading === tenant.electricityUsage.currentReading)
+                ).map((tenant) => (
+                  <UnrecordedMeterRoom
+                    key={tenant.id}
+                    tenant={tenant}
+                    selectedDormitory={selectedDormitory}
+                    config={config}
+                    onSuccess={() => {
+                      if (selectedDormitory) {
+                        const tenantsResult = queryTenants(selectedDormitory).then(result => {
+                          if (result.success && result.data) {
+                            const activeTenantsWithRoom = result.data.filter(tenant => 
+                              tenant.status === 'active' && tenant.roomNumber
+                            );
+
+                            Promise.all(
+                              activeTenantsWithRoom.map(async (tenant) => {
+                                const meterResult = await getLatestMeterReading(
+                                  selectedDormitory,
+                                  tenant.roomNumber,
+                                  'electric'
+                                );
+
+                                let hasMeterReading = false;
+                                let lastMeterReadingDate: Date | undefined;
+                                let electricityUsage = undefined;
+
+                                if (meterResult.success && meterResult.data) {
+                                  const reading = meterResult.data as MeterReading;
+                                  const readingDate = new Date(reading.readingDate);
+                                  const today = new Date();
+                                  
+                                  hasMeterReading = 
+                                    readingDate.getMonth() === today.getMonth() && 
+                                    readingDate.getFullYear() === today.getFullYear();
+
+                                  lastMeterReadingDate = readingDate;
+
+                                  if (hasMeterReading) {
+                                    electricityUsage = {
+                                      previousReading: reading.previousReading,
+                                      currentReading: reading.currentReading,
+                                      unitsUsed: reading.unitsUsed,
+                                      charge: reading.unitsUsed * (config?.electricityRate || 8)
+                                    };
+                                  }
+                                }
+
+                                return {
+                                  ...tenant,
+                                  hasMeterReading,
+                                  lastMeterReadingDate,
+                                  electricityUsage,
+                                  canCreateBill: hasMeterReading
+                                } as TenantWithBillStatus;
+                              })
+                            ).then(tenantsWithBillStatus => {
+                              setTenants(tenantsWithBillStatus);
+                            });
+                          }
+                        });
+                      }
+                    }}
+                  />
+                ))}
                   </div>
-                ) : (
-                  tenants.map((tenant) => (
+            </div>
+
+            {/* ส่วนของผู้เช่าที่จดมิเตอร์แล้ว */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">รายการผู้เช่าที่พร้อมสร้างบิล ({tenantsCanCreateBill.length} ห้อง)</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowAllTenants(!showAllTenants)}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    {showAllTenants ? 'แสดงห้องเดียว' : 'แสดงทั้งหมด'}
+                  </button>
+                  {tenantsCanCreateBill.length > 0 && (
+                    <button
+                      onClick={handleCreateAllBills}
+                      className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      สร้างบิลทั้งหมด ({tenantsCanCreateBill.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-4">
+                {(showAllTenants ? tenantsCanCreateBill : tenantsCanCreateBill.slice(0, 1)).map((tenant) => (
                     <div
                       key={tenant.id}
-                      className={`p-4 rounded-lg border ${
-                        tenant.hasMeterReading
-                          ? "border-green-200 bg-green-50"
-                          : "border-gray-200 bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
+                    className="p-6 rounded-lg border border-green-200 bg-green-50"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      {/* ข้อมูลผู้เช่า */}
+                      <div className="flex-1 space-y-4">
                         <div>
-                          <h3 className="font-medium">
-                            ห้อง {tenant.roomNumber} - {tenant.name}
+                          <h3 className="text-lg font-medium flex items-center gap-2">
+                            ห้อง {tenant.roomNumber}
+                            <span className="text-sm font-normal text-gray-500">
+                              ({tenant.name})
+                            </span>
                           </h3>
-                          <div className="space-y-1 mt-1">
-                            {/* แสดงสถานะ */}
-                            {(() => {
-                              const status = getBillStatus(tenant, config);
-                              return (
-                                <div className={`flex items-center gap-1 ${
-                                  status.canCreateBill
-                                    ? 'text-green-600'
-                                    : 'text-red-600'
-                                }`}>
-                                  {status.canCreateBill ? 'พร้อมสร้างบิล' : status.message}
+                          <div className="mt-2 grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-gray-500">ข้อมูลติดต่อ</p>
+                              <p className="text-sm">เลขบัตรประชาชน: {tenant.idCardNumber ? tenant.idCardNumber.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5') : '-'}</p>
+                              <p className="text-sm">เบอร์โทร: {tenant.phone || '-'}</p>
+                              <p className="text-sm">Line ID: {tenant.lineId || '-'}</p>
+                              <p className="text-sm">อีเมล: {tenant.email || '-'}</p>
                                 </div>
-                              );
-                            })()}
+                            <div>
+                              <p className="text-sm text-gray-500">ข้อมูลสัญญา</p>
+                              <p className="text-sm">วันเข้าอยู่: {tenant.moveInDate ? new Date(tenant.moveInDate).toLocaleDateString('th-TH') : '-'}</p>
+                              <p className="text-sm">สถานะ: {tenant.status === 'active' ? 'อยู่ประจำ' : 'กำลังย้ายออก'}</p>
+                            </div>
+                          </div>
+                                </div>
 
+                        {/* ข้อมูลค่าใช้จ่าย */}
+                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                          <h4 className="font-medium mb-3">รายการค่าใช้จ่าย</h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-sm">ค่าห้องพัก</span>
+                              <span className="text-sm">฿{config?.roomRate?.toLocaleString() || 0}</span>
+                            </div>
+                            {tenant.electricityUsage && (
+                              <div className="flex justify-between">
+                                <span className="text-sm">ค่าไฟฟ้า ({tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย)</span>
+                                <span className="text-sm">฿{tenant.electricityUsage.charge.toLocaleString()}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-sm">ค่าน้ำ</span>
+                              <span className="text-sm">฿{config?.waterRate?.toLocaleString() || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm">ค่าส่วนกลาง</span>
+                              <span className="text-sm">฿{config?.commonFee?.toLocaleString() || 0}</span>
+                            </div>
+                            {/* คำนวณยอดรวม */}
+                            <div className="border-t pt-2 mt-2">
+                              <div className="flex justify-between font-medium">
+                                <span>ยอดรวมทั้งหมด</span>
+                                <span>฿{calculateTotalAmount(tenant, config).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* สถานะการจดมิเตอร์ */}
+                        <div>
                             {tenant.lastMeterReadingDate && (
-                              <p className="text-sm text-gray-500">
+                            <p className="text-sm text-gray-600">
                                 จดมิเตอร์ล่าสุด: {tenant.lastMeterReadingDate.toLocaleDateString('th-TH')}
                               </p>
                             )}
                             {tenant.electricityUsage && (
-                              <div className="mt-2 text-sm">
-                                <p className="text-blue-600">
-                                  หน่วยไฟที่ใช้: {tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย
-                                </p>
-                                <p className="text-green-600">
-                                  ค่าไฟ: ฿{tenant.electricityUsage.charge.toFixed(2)}
+                            <div className="mt-1">
+                              <p className="text-sm text-blue-600">
+                                มิเตอร์ไฟฟ้า: {tenant.electricityUsage.previousReading} → {tenant.electricityUsage.currentReading}
                                 </p>
                               </div>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {!tenant.hasMeterReading && (
-                            <button
-                              onClick={() => router.push(`/dormitories/meter-reading?search=${tenant.roomNumber}&returnUrl=/dormitories/bills`)}
-                              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
-                            >
-                              <Zap className="w-4 h-4 mr-1" />
-                              จดมิเตอร์
-                            </button>
-                          )}
+
+                      {/* ปุ่มดำเนินการ */}
+                      <div className="flex flex-col gap-2">
                           <button
                             onClick={() => handleCreateBill(tenant)}
-                            disabled={!tenant.hasMeterReading}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                              tenant.hasMeterReading
-                                ? "bg-green-600 text-white hover:bg-green-700"
-                                : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                            }`}
+                          className="px-4 py-2 rounded-lg text-sm font-medium w-full bg-green-600 text-white hover:bg-green-700"
                           >
                             สร้างบิล
                           </button>
                         </div>
                       </div>
                     </div>
-                  ))
-                )}
+                ))}
               </div>
             </div>
 
@@ -556,14 +962,31 @@ function BillsList({ config }) {
                           {new Date(bill.dueDate).toLocaleDateString('th-TH')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex justify-end gap-2">
                           {bill.status !== 'paid' && (
+                              <>
                             <button
                               onClick={() => handlePayBill(bill)}
                               className="text-blue-600 hover:text-blue-900"
                             >
                               ชำระเงิน
                             </button>
-                          )}
+                                <button
+                                  onClick={() => handleEditBill(bill)}
+                                  className="text-yellow-600 hover:text-yellow-900"
+                                >
+                                  แก้ไข
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleDeleteBill(bill)}
+                              className="text-red-600 hover:text-red-900 flex items-center gap-1"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              ลบ
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -586,10 +1009,9 @@ function BillsList({ config }) {
           dormitoryId={selectedDormitory}
           room={selectedRoom}
           onBillCreated={() => {
-            // Refresh bills
             getBillsByDormitory(selectedDormitory).then(result => {
               if (result.success && result.data) {
-                setBills(result.data);
+                setBills(result.data as Bill[]);
               }
             });
           }}
@@ -606,10 +1028,9 @@ function BillsList({ config }) {
           bill={selectedBill}
           dormitoryId={selectedDormitory}
           onPaymentComplete={() => {
-            // Refresh bills
             getBillsByDormitory(selectedDormitory).then(result => {
               if (result.success && result.data) {
-                setBills(result.data);
+                setBills(result.data as Bill[]);
               }
             });
           }}

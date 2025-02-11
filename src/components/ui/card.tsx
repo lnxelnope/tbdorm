@@ -39,7 +39,7 @@ const CardTitle = ({
   return (
     <h3
       className={cn(
-        "text-lg font-semibold leading-none tracking-tight text-white/90",
+        "text-lg font-semibold leading-none tracking-tight text-grey-990",
         className
       )}
       {...props}
@@ -53,7 +53,7 @@ const CardDescription = ({
 }: React.HTMLAttributes<HTMLParagraphElement>) => {
   return (
     <p
-      className={cn("text-sm text-white/60", className)}
+      className={cn("text-sm text-grey-900", className)}
       {...props}
     />
   );

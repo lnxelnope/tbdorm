@@ -176,20 +176,15 @@ export default function DormitoriesPage() {
                   )}
 
                   {/* ค่าบริการเพิ่มเติม */}
-                  {dormitory.config?.additionalFees && (
+                  {dormitory.config?.additionalFees?.items?.length > 0 && (
                     <div className="space-y-1">
                       <div className="text-xs font-medium text-gray-500">ค่าบริการเพิ่มเติม:</div>
-                      {dormitory.config.additionalFees.airConditioner !== null && (
-                        <div className="ml-2">
-                          • ค่าแอร์: {dormitory.config.additionalFees.airConditioner.toLocaleString()} บาท/เดือน
+                      {dormitory.config?.additionalFees?.items?.map((item) => (
+                        <div key={item.id} className="ml-2">
+                          • {item.name}: {item.amount.toLocaleString()} บาท/เดือน
                         </div>
-                      )}
-                      {dormitory.config.additionalFees.parking !== null && (
-                        <div className="ml-2">
-                          • ค่าที่จอดรถ: {dormitory.config.additionalFees.parking.toLocaleString()} บาท/เดือน
-                        </div>
-                      )}
-                      {dormitory.config.additionalFees.floorRates && Object.entries(dormitory.config.additionalFees.floorRates)
+                      ))}
+                      {dormitory.config?.additionalFees?.floorRates && Object.entries(dormitory.config?.additionalFees?.floorRates)
                         .filter(([_, value]) => value !== null && value !== 0)
                         .map(([floor, value]) => value !== null && (
                           <div key={floor} className="ml-2">

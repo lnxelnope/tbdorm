@@ -15,9 +15,12 @@ import {
   X,
   AlertTriangle,
   Zap,
-  FileText
+  FileText,
+  Smartphone,
+  Monitor
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/contexts/ThemeContext";
 
 interface MenuItem {
   name: string;
@@ -41,6 +44,7 @@ interface SidebarProps {
 export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobileMode, toggleMobileMode } = useTheme();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([
     // เปิดเมนูย่อยอัตโนมัติถ้าอยู่ในหน้าย่อยนั้นๆ
     ...(['tenants', 'tenants/history'].some(path => pathname?.includes(path)) ? ['ผู้เช่า'] : [])
@@ -127,13 +131,33 @@ export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: Si
   return (
     <div className="h-full bg-white border-r">
       {/* Header with Toggle Button */}
-      <div className="flex items-center justify-between p-4 border-b">
-        <h1 className="text-xl font-semibold text-gray-900">TB Dorm</h1>
+      <div className="flex flex-col border-b">
+        <div className="flex items-center justify-between p-4">
+          <h1 className="text-xl font-semibold text-gray-900">TB Dorm</h1>
+          <button
+            onClick={onToggle}
+            className="p-2 rounded-lg hover:bg-gray-100 md:hidden"
+          >
+            {isCollapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
+          </button>
+        </div>
+        
+        {/* Mode Toggle Button */}
         <button
-          onClick={onToggle}
-          className="p-2 rounded-lg hover:bg-gray-100 md:hidden"
+          onClick={toggleMobileMode}
+          className="flex items-center justify-center gap-2 px-4 py-2 mx-4 mb-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
         >
-          {isCollapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
+          {isMobileMode ? (
+            <>
+              <Monitor className="w-4 h-4" />
+              <span>สลับเป็นโหมดคอมพิวเตอร์</span>
+            </>
+          ) : (
+            <>
+              <Smartphone className="w-4 h-4" />
+              <span>สลับเป็นโหมดมือถือ</span>
+            </>
+          )}
         </button>
       </div>
 

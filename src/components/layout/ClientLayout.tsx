@@ -1,42 +1,36 @@
 "use client";
 
-import { useAuth } from "@/lib/hooks/useAuth";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
 import Sidebar from "@/components/Sidebar";
+import { ThemeProvider } from "@/lib/contexts/ThemeContext";
+import { Toaster } from "sonner";
 
 export default function ClientLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
-  }, [user, loading, router]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-gray-50">
-        {children}
-      </main>
-    </div>
+    <ThemeProvider>
+      <div className="flex h-screen">
+        <div className={cn(
+          "fixed inset-y-0 z-50 transition-transform duration-300 md:relative md:translate-x-0",
+          isSidebarCollapsed ? "-translate-x-full" : "translate-x-0"
+        )}>
+          <Sidebar 
+            isCollapsed={isSidebarCollapsed}
+            onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onMobileItemClick={() => setIsSidebarCollapsed(true)}
+          />
+        </div>
+        <main className="flex-1 overflow-y-auto bg-gray-50 w-full">
+          {children}
+        </main>
+      </div>
+      <Toaster richColors position="top-right" />
+    </ThemeProvider>
   );
 } 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Room, RoomType } from "@/types/dormitory";
-import { addRoom, getInitialMeterReading, getRooms } from "@/lib/firebase/firebaseUtils";
+import { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
+import { addRoom, getInitialMeterReading, getRooms, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
@@ -52,10 +52,9 @@ interface FormData {
   numbers: string; // เปลี่ยนจาก number เป็น numbers สำหรับรับ range string
   floor: number;
   roomType: string;
-  hasAirConditioner: boolean;
-  hasParking: boolean;
   status: Room['status'];
   initialMeterReading: string;
+  additionalServices: string[]; // เพิ่มฟิลด์ใหม่
 }
 
 export default function AddRoomModal({
@@ -69,6 +68,8 @@ export default function AddRoomModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [roomTypes, setRoomTypes] = useState<RoomType[]>(initialRoomTypes);
+  const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
+  const [existingRooms, setExistingRooms] = useState<Room[]>([]);
   
   // ย้าย useState ของ formData มาไว้ด้านบน
   const defaultRoomType = Array.isArray(roomTypes) ? (roomTypes.find(type => type.isDefault) || roomTypes[0]) : null;
@@ -76,14 +77,21 @@ export default function AddRoomModal({
     numbers: "",
     floor: 1,
     roomType: defaultRoomType?.id || "",
-    hasAirConditioner: false,
-    hasParking: false,
     status: "available",
     initialMeterReading: "0",
+    additionalServices: [], // เพิ่มค่าเริ่มต้น
   });
   
-  // เพิ่ม state สำหรับเก็บห้องที่มีอยู่แล้ว
-  const [existingRooms, setExistingRooms] = useState<Room[]>([]);
+  // เพิ่ม useEffect เพื่อดึงข้อมูล dormitory config
+  useEffect(() => {
+    const fetchDormitoryConfig = async () => {
+      const result = await getDormitory(dormitoryId);
+      if (result.success && result.data?.config) {
+        setDormitoryConfig(result.data.config);
+      }
+    };
+    fetchDormitoryConfig();
+  }, [dormitoryId]);
   
   // ถ้าไม่มีรูปแบบห้องให้แจ้งเตือน
   useEffect(() => {
@@ -124,7 +132,7 @@ export default function AddRoomModal({
     const loadExistingRooms = async () => {
       try {
         const result = await getRooms(dormitoryId);
-        if (result.success) {
+        if (result.success && result.data) {
           setExistingRooms(result.data);
         }
       } catch (error) {
@@ -181,16 +189,23 @@ export default function AddRoomModal({
       // สร้างห้องพักทีละห้อง
       let completedRooms = 0;
       const results = [];
+      
       for (const number of roomNumbers) {
-        const roomData: Omit<Room, "id"> = {
+        // ใช้ doc().id แทน crypto.randomUUID()
+        const roomRef = doc(collection(db, 'dormitories', dormitoryId, 'rooms'));
+        const roomId = roomRef.id;
+        
+        const roomData: Room = {
+          id: roomId, // ใช้ ID ที่ได้จาก Firestore
           dormitoryId,
           number,
           floor: formData.floor,
           roomType: formData.roomType,
           status: formData.status,
-          hasAirConditioner: formData.hasAirConditioner,
-          hasParking: formData.hasParking,
           initialMeterReading: parseFloat(formData.initialMeterReading) || 0,
+          additionalServices: formData.additionalServices,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
 
         const result = await addRoom(dormitoryId, roomData);
@@ -205,20 +220,9 @@ export default function AddRoomModal({
         toast.error(`ไม่สามารถสร้างห้องพักได้ ${failedRooms.length} ห้อง`);
       } else {
         toast.success(`สร้างห้องพักสำเร็จ ${results.length} ห้อง`);
-        // ส่งข้อมูลห้องแรกที่สร้างกลับไป
         const firstRoom = results[0];
-        if (firstRoom.success && firstRoom.id) {
-          onSuccess({ 
-            id: firstRoom.id,
-            dormitoryId,
-            number: roomNumbers[0],
-            floor: formData.floor,
-            roomType: formData.roomType,
-            hasAirConditioner: formData.hasAirConditioner,
-            hasParking: formData.hasParking,
-            status: formData.status,
-            initialMeterReading: parseFloat(formData.initialMeterReading) || 0,
-          });
+        if (firstRoom.success && firstRoom.data) {
+          onSuccess(firstRoom.data);
         }
         onClose();
       }
@@ -229,6 +233,16 @@ export default function AddRoomModal({
       setIsSubmitting(false);
       setProgress({ current: 0, total: 0 });
     }
+  };
+
+  // เพิ่มฟังก์ชันสำหรับจัดการการเลือกค่าบริการเพิ่มเติม
+  const handleAdditionalServiceChange = (serviceId: string, checked: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      additionalServices: checked 
+        ? [...prev.additionalServices, serviceId]
+        : prev.additionalServices.filter(id => id !== serviceId)
+    }));
   };
 
   return (
@@ -332,34 +346,23 @@ export default function AddRoomModal({
             />
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="hasAirConditioner"
-                checked={formData.hasAirConditioner}
-                onChange={(e) =>
-                  setFormData({ ...formData, hasAirConditioner: e.target.checked })
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="hasAirConditioner" className="ml-2 block text-sm text-gray-700">
-                มีเครื่องปรับอากาศ
-              </label>
-            </div>
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="hasParking"
-                checked={formData.hasParking}
-                onChange={(e) =>
-                  setFormData({ ...formData, hasParking: e.target.checked })
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="hasParking" className="ml-2 block text-sm text-gray-700">
-                มีที่จอดรถ
-              </label>
+          {/* เพิ่มส่วนของค่าบริการเพิ่มเติม */}
+          <div className="space-y-4 mt-4">
+            <h3 className="text-sm font-medium text-gray-900">ค่าบริการเพิ่มเติม</h3>
+            <div className="space-y-2">
+              {dormitoryConfig?.additionalFees?.items?.map((item) => (
+                <label key={item.id} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.additionalServices.includes(item.id)}
+                    onChange={(e) => handleAdditionalServiceChange(item.id, e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="ml-2 text-sm text-gray-600">
+                    {item.name} ({item.amount.toLocaleString()} บาท)
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
 

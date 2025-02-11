@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { addDormitory } from "@/lib/firebase/firebaseUtils";
 
 interface FormData {
@@ -23,13 +22,28 @@ interface FormData {
   status: "active" | "inactive";
   config: {
     roomTypes: Record<string, never>;
+    additionalFees: {
+      items: Array<{
+        id: string;
+        name: string;
+        amount: number;
+      }>;
+      utilities: {
+        water: {
+          perPerson: number | null;
+        };
+        electric: {
+          unit: number | null;
+        };
+      };
+      floorRates: Record<string, number>;
+    };
   };
   floors: number;
 }
 
 export default function NewDormitoryPage() {
   const router = useRouter();
-  const { user, signInWithGoogle } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: "",
@@ -46,73 +60,53 @@ export default function NewDormitoryPage() {
     status: "active",
     config: {
       roomTypes: {},
+      additionalFees: {
+        items: [],
+        utilities: {
+          water: { perPerson: null },
+          electric: { unit: null }
+        },
+        floorRates: {}
+      }
     },
     floors: 1,
   });
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full space-y-8 p-8">
-          <div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              กรุณาเข้าสู่ระบบ
-            </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
-              คุณต้องเข้าสู่ระบบก่อนเพิ่มหอพัก
-            </p>
-          </div>
-          <div>
-            <button
-              onClick={signInWithGoogle}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              เข้าสู่ระบบด้วย Google
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name?.trim()) {
+    if (!formData.name.trim()) {
       toast.error("กรุณากรอกชื่อหอพัก");
       return;
     }
 
-    try {
-      setIsSubmitting(true);
+    setIsSubmitting(true);
 
+    try {
       const dormitoryData = {
-        name: formData.name,
-        address: formData.address,
-        totalFloors: Number(formData.totalFloors),
-        phone: formData.phone,
-        description: formData.description,
-        location: formData.location,
-        facilities: formData.facilities,
-        images: formData.images,
-        status: formData.status,
-        config: {
-          roomTypes: {},
-        },
-        floors: formData.totalFloors,
-      } as const;
+        ...formData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
       const result = await addDormitory(dormitoryData);
-
-      if (result.success && result.id) {
-        toast.success("เพิ่มหอพักเรียบร้อย");
+      
+      if (result.success) {
+        toast.success("เพิ่มหอพักเรียบร้อยแล้ว");
         router.push("/dormitories");
+      } else if (typeof result.error === 'string') {
+        toast.error(result.error);
       } else {
-        toast.error("เกิดข้อผิดพลาดในการเพิ่มหอพัก");
+        toast.error("ไม่สามารถเพิ่มหอพักได้");
       }
     } catch (error) {
-      console.error("Error adding dormitory:", error);
-      toast.error("เกิดข้อผิดพลาดในการเพิ่มหอพัก");
+      if (error instanceof Error) {
+        console.error("Error adding dormitory:", error.message);
+        toast.error(error.message);
+      } else {
+        console.error("Error adding dormitory:", error);
+        toast.error("เกิดข้อผิดพลาดในการเพิ่มหอพัก");
+      }
     } finally {
       setIsSubmitting(false);
     }

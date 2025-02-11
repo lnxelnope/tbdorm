@@ -6,13 +6,13 @@ import { getRoomTypes, addRoomType, updateRoomType, deleteRoomType } from "@/lib
 import { toast } from "sonner";
 import Modal from "@/components/ui/modal";
 
-interface FormData extends Omit<RoomType, 'id'> {
+interface FormData {
   name: string;
   basePrice: number;
-  isDefault: boolean;
   description: string;
-  airConditionerFee: number;
-  parkingFee: number;
+  isDefault: boolean;
+  facilities: string[];
+  size: string;
 }
 
 export default function RoomTypesPage({ params }: { params: { id: string } }) {
@@ -23,10 +23,10 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
   const [formData, setFormData] = useState<FormData>({
     name: "",
     basePrice: 0,
-    isDefault: false,
     description: "",
-    airConditionerFee: 0,
-    parkingFee: 0,
+    isDefault: false,
+    facilities: [],
+    size: ""
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -103,10 +103,10 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
     setFormData({
       name: type.name,
       basePrice: type.basePrice,
-      isDefault: type.isDefault || false,
       description: type.description || "",
-      airConditionerFee: type.airConditionerFee || 0,
-      parkingFee: type.parkingFee || 0,
+      isDefault: type.isDefault || false,
+      facilities: type.facilities || [],
+      size: type.size || ""
     });
     setShowAddModal(true);
   };
@@ -115,10 +115,10 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
     setFormData({
       name: "",
       basePrice: 0,
-      isDefault: false,
       description: "",
-      airConditionerFee: 0,
-      parkingFee: 0,
+      isDefault: false,
+      facilities: [],
+      size: ""
     });
     setEditingType(null);
   };
@@ -149,12 +149,6 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
                 ราคา
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ค่าแอร์
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ค่าที่จอดรถ
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 ค่าเริ่มต้น
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -170,12 +164,6 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {type.basePrice.toLocaleString()} บาท
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {type.airConditionerFee?.toLocaleString() || "-"} บาท
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {type.parkingFee?.toLocaleString() || "-"} บาท
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {type.isDefault ? "ใช่" : "ไม่"}
@@ -206,78 +194,32 @@ export default function RoomTypesPage({ params }: { params: { id: string } }) {
             {editingType ? "แก้ไขรูปแบบห้อง" : "เพิ่มรูปแบบห้อง"}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                ชื่อ <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="กรุณากรอกชื่อรูปแบบห้อง"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                ราคา (บาท) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                value={formData.basePrice}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    basePrice: parseFloat(e.target.value) || 0,
-                  })
-                }
-                placeholder="กรุณากรอกราคา"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                ค่าแอร์ (บาท)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.airConditionerFee}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    airConditionerFee: parseFloat(e.target.value) || 0,
-                  })
-                }
-                placeholder="กรุณากรอกค่าแอร์"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                ค่าที่จอดรถ (บาท)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.parkingFee}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    parkingFee: parseFloat(e.target.value) || 0,
-                  })
-                }
-                placeholder="กรุณากรอกค่าที่จอดรถ"
-                className="mt-1"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  ชื่อประเภทห้อง <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  className="mt-1 block w-full rounded-md border-gray-300"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  ราคาพื้นฐาน (บาท/เดือน) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={formData.basePrice}
+                  onChange={(e) => setFormData({ ...formData, basePrice: parseFloat(e.target.value) || 0 })}
+                  required
+                  min="0"
+                  className="mt-1 block w-full rounded-md border-gray-300"
+                />
+              </div>
             </div>
 
             <div>

@@ -43,13 +43,10 @@ export interface Room {
   status: 'vacant' | 'occupied' | 'maintenance';
   features: {
     hasAC: boolean;
-    hasParking: boolean;
     isGroundFloor: boolean;
     [key: string]: boolean; // สำหรับฟีเจอร์เพิ่มเติมในอนาคต
   };
   featuresPricing: {
-    acPrice: number;
-    parkingPrice: number;
     groundFloorPrice: number;
     [key: string]: number;
   };
@@ -162,4 +159,14 @@ export interface FraudAlert {
   resolution?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface RoomType {
+  id: string;
+  name: string;
+  basePrice: number;
+  isDefault: boolean;
+  description?: string;
+  facilities?: string[];
+  size?: string;
 } 

@@ -3,15 +3,17 @@
 import { useState, useEffect } from "react";
 import { Dormitory, Tenant } from "@/types/dormitory";
 import EditTenantModal from "./EditTenantModal";
+import DeleteTenantModal from "./DeleteTenantModal";
 import { toast } from "sonner";
 import { ChevronUp, ChevronDown, Loader2, Plus, X, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
-import { deleteTenant, deleteMultipleTenants, queryTenants } from "@/lib/firebase/firebaseUtils";
+import { deleteTenant, deleteMultipleTenants, queryTenants, moveTenantToHistory } from "@/lib/firebase/firebaseUtils";
 import Link from "next/link";
 import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { addDoc, collection, query, where, getDocs, updateDoc, doc, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 import { Dialog } from "@headlessui/react";
+import Modal from "@/components/ui/modal";
 
 interface TenantListProps {
   dormitories: Dormitory[];
@@ -20,6 +22,8 @@ interface TenantListProps {
   searchQuery: string;
   statusFilter: string;
   onAddClick: () => void;
+  onEdit: (tenant: Tenant) => void;
+  onRefresh: () => void;
 }
 
 type SortField = 'name' | 'onTime' | 'late' | 'outstanding' | 'dormitory' | 'roomNumber' | 'startDate' | 'deposit' | 'numberOfResidents' | 'rent' | 'outstandingBalance';
@@ -30,6 +34,28 @@ interface TenantPaymentHistory {
   outstandingCount: number;
 }
 
+interface FormData {
+  name: string;
+  idCard: string;
+  phone: string;
+  email: string;
+  lineId: string;
+  workplace: string;
+  currentAddress: string;
+  dormitoryId: string;
+  roomId: string;
+  roomNumber: string;
+  startDate: string;
+  deposit: number;
+  numberOfResidents: number;
+  additionalServices: string[];
+  emergencyContact: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
+}
+
 export default function TenantList({
   dormitories,
   tenants: initialTenants,
@@ -37,9 +63,12 @@ export default function TenantList({
   searchQuery,
   statusFilter,
   onAddClick,
+  onEdit,
+  onRefresh,
 }: TenantListProps) {
   const [tenants, setTenants] = useState(initialTenants);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedTenants, setSelectedTenants] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{
@@ -52,6 +81,27 @@ export default function TenantList({
   const [selectedTenantForView, setSelectedTenantForView] = useState<Tenant | null>(null);
   const [electricityHistory, setElectricityHistory] = useState<any[]>([]);
   const [paymentHistories, setPaymentHistories] = useState<Record<string, TenantPaymentHistory>>({});
+  const [formData, setFormData] = useState<FormData>({
+    name: "",
+    idCard: "",
+    phone: "",
+    email: "",
+    lineId: "",
+    workplace: "",
+    currentAddress: "",
+    dormitoryId: "",
+    roomId: "",
+    roomNumber: "",
+    startDate: new Date().toISOString().split('T')[0],
+    deposit: 0,
+    numberOfResidents: 1,
+    additionalServices: [],
+    emergencyContact: {
+      name: "",
+      relationship: "",
+      phone: "",
+    },
+  });
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -171,104 +221,11 @@ export default function TenantList({
     }));
   };
 
-  const handleDeleteTenant = async (tenantId: string) => {
-    // สร้าง dialog ถามเหตุผลการลบ
-    const reason = await new Promise<'quit' | 'error' | null>((resolve) => {
-      const dialog = document.createElement('dialog');
-      dialog.className = 'p-4 rounded-lg shadow-lg bg-white';
-      
-      const content = document.createElement('div');
-      content.className = 'space-y-4';
-      content.innerHTML = `
-        <h3 class="text-lg font-medium">กรุณาระบุเหตุผลในการลบผู้เช่า</h3>
-        <div class="space-y-2">
-          <button class="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100 rounded-lg" data-reason="quit">
-            เลิกเช่า
-          </button>
-          <button class="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100 rounded-lg" data-reason="error">
-            ป้อนข้อมูลผิดพลาด
-          </button>
-          <button class="w-full px-4 py-2 text-sm text-left text-gray-500 hover:bg-gray-100 rounded-lg" data-reason="cancel">
-            ยกเลิก
-          </button>
-        </div>
-      `;
-
-      content.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const reason = target.getAttribute('data-reason');
-        if (reason === 'quit') resolve('quit');
-        else if (reason === 'error') resolve('error');
-        else if (reason === 'cancel') resolve(null);
-        dialog.close();
-      });
-
-      dialog.appendChild(content);
-      document.body.appendChild(dialog);
-      dialog.showModal();
-
-      dialog.addEventListener('close', () => {
-        document.body.removeChild(dialog);
-        resolve(null);
-      });
-    });
-
-    if (!reason) return;
-
-    try {
-      setIsDeleting(true);
-      const tenant = tenants.find(t => t.id === tenantId);
-      if (!tenant) return;
-
-      if (reason === 'quit') {
-        // เช็คประวัติผู้เช่าที่มีอยู่แล้ว
-        const historyRef = collection(db, 'tenant_history');
-        const q = query(historyRef, where('idCard', '==', tenant.idCard));
-        const historySnapshot = await getDocs(q);
-
-        const tenantHistory = {
-          ...tenant,
-          quitDate: new Date(),
-          type: 'quit' as const,
-          updatedAt: new Date()
-        };
-
-        if (!historySnapshot.empty) {
-          // ถ้ามีประวัติอยู่แล้ว ให้อัปเดตข้อมูลล่าสุด
-          const existingHistory = historySnapshot.docs[0];
-          await updateDoc(doc(db, 'tenant_history', existingHistory.id), {
-            ...tenantHistory,
-            // เก็บข้อมูล createdAt จากประวัติเดิม
-            createdAt: existingHistory.data().createdAt
-          });
-          toast.success("อัปเดตประวัติผู้เช่าเรียบร้อยแล้ว");
-        } else {
-          // ถ้ายังไม่มีประวัติ ให้สร้างใหม่
-          await addDoc(collection(db, 'tenant_history'), {
-            ...tenantHistory,
-            createdAt: new Date()
-          });
-          toast.success("บันทึกประวัติผู้เช่าเรียบร้อยแล้ว");
-        }
-      }
-
-      const result = await deleteTenant(tenant.dormitoryId, tenantId);
-      
-      if (result.success) {
-        toast.success("ลบผู้เช่าเรียบร้อยแล้ว");
-        // รีเฟรชข้อมูลผู้เช่า
-        const result = await queryTenants(selectedDormitory);
-        if (result.success && result.data) {
-          setTenants(result.data);
-        }
-      } else {
-        toast.error("เกิดข้อผิดพลาดในการลบผู้เช่า");
-      }
-    } catch (error) {
-      console.error("Error deleting tenant:", error);
-      toast.error("เกิดข้อผิดพลาดในการลบผู้เช่า");
-    } finally {
-      setIsDeleting(false);
+  const handleDeleteTenant = (tenantId: string) => {
+    const tenant = tenants.find((t) => t.id === tenantId);
+    if (tenant) {
+      setSelectedTenant(tenant);
+      setIsDeleteModalOpen(true);
     }
   };
 
@@ -282,6 +239,7 @@ export default function TenantList({
       floor: parseInt(tenant.roomNumber.substring(0, 1)),
       status: 'occupied' as const,
       roomType: Object.values(dormitory.config.roomTypes).find(type => type.isDefault)?.id || '',
+      initialMeterReading: 0,
       hasAirConditioner: false,
       hasParking: false,
     };
@@ -290,18 +248,13 @@ export default function TenantList({
     if (!roomType) return 0;
 
     const config = {
-      additionalFees: {
-        airConditioner: dormitory.config.additionalFees?.airConditioner || null,
-        parking: dormitory.config.additionalFees?.parking || null,
-        floorRates: dormitory.config.additionalFees?.floorRates || {},
+      additionalFees: dormitory.config.additionalFees || {
         utilities: {
-          water: {
-            perPerson: dormitory.config.additionalFees?.utilities?.water?.perPerson || null
-          },
-          electric: {
-            unit: dormitory.config.additionalFees?.utilities?.electric?.unit || null
-          }
-        }
+          water: { perPerson: null },
+          electric: { unit: null }
+        },
+        items: [],
+        floorRates: {}
       }
     };
 
@@ -442,6 +395,33 @@ export default function TenantList({
 
   return (
     <div className="space-y-4">
+      {/* Delete Modal */}
+      <DeleteTenantModal
+        isOpen={isDeleteModalOpen}
+        tenant={selectedTenant}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSelectedTenant(null);
+        }}
+        onSuccess={() => {
+          setIsDeleteModalOpen(false);
+          setSelectedTenant(null);
+          const loadTenants = async () => {
+            try {
+              const result = await queryTenants(selectedDormitory);
+              if (result.success && result.data) {
+                setTenants(result.data);
+              }
+            } catch (error) {
+              console.error("Error loading tenants:", error);
+              toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้เช่า");
+            }
+          };
+          loadTenants();
+          onRefresh();
+        }}
+      />
+
       {selectedTenants.length > 0 && (
         <Card>
           <CardContent className="flex items-center justify-between p-4">
@@ -631,7 +611,7 @@ export default function TenantList({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button
-                          onClick={() => setSelectedTenant(tenant)}
+                          onClick={() => onEdit(tenant)}
                           className="text-blue-600 hover:text-blue-900 mr-4"
                         >
                           แก้ไข

@@ -21,4 +21,5 @@ export interface Tenant {
   status: 'active' | 'inactive';
   createdAt: Date;
   updatedAt: Date;
-} 
+  dormitoryName?: string;
+}

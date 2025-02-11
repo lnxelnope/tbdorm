@@ -3,65 +3,91 @@
 import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { Room, RoomType, Tenant, Bill, BillItem } from "@/types/dormitory";
+import { DormitoryConfig, Room, RoomType, Tenant } from "@/types/dormitory";
 import {
   getRooms,
   getRoomTypes,
-  queryTenants,
+  queryTenants as getTenants,
   createBill,
   getUtilityReadings,
+  getDormitoryConfig,
+  getDormitory,
 } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+
+interface BillItem {
+  name: string;
+  type: string;
+  amount: number;
+}
+
+interface RoomWithTenant extends Room {
+  currentTenant?: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+interface DormitoryConfigState {
+  roomRate: number;
+  waterRate: number;
+  electricityRate: number;
+  additionalFees: {
+    items: Array<{
+      id: string;
+      name: string;
+      amount: number;
+    }>;
+    floorRates: {
+      [key: string]: number;
+    };
+  };
+}
 
 export default function BatchCreateBillPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [rooms, setRooms] = useState<RoomWithTenant[]>([]);
+  const [selectedRooms, setSelectedRooms] = useState<RoomWithTenant[]>([]);
+  const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfigState | null>(null);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [utilityReadings, setUtilityReadings] = useState<any[]>([]);
-  const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
-  const [formData, setFormData] = useState({
-    month: new Date().getMonth() + 1,
-    year: new Date().getFullYear(),
-    dueDate: new Date(
+  const [dueDate, setDueDate] = useState(
+    new Date(
       new Date().getFullYear(),
       new Date().getMonth(),
       10
-    ).toISOString().split("T")[0],
-  });
+    ).toISOString().split("T")[0]
+  );
 
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [roomsResult, roomTypesResult, tenantsResult] = await Promise.all([
+      const [roomsResult, tenantsResult, roomTypesResult] = await Promise.all([
         getRooms(params.id),
-        getRoomTypes(params.id),
-        queryTenants(params.id),
+        getTenants(params.id),
+        getRoomTypes(params.id)
       ]);
 
-      if (roomsResult.success && roomsResult.data) {
-        setRooms(roomsResult.data);
-        // เลือกห้องที่มีผู้เช่าทั้งหมดเป็นค่าเริ่มต้น
-        setSelectedRooms(
-          roomsResult.data
-            .filter((room) => room.status === "occupied")
-            .map((room) => room.id)
-        );
-      }
-      if (roomTypesResult.success && roomTypesResult.data) {
-        setRoomTypes(roomTypesResult.data);
-      }
-      if (tenantsResult.success && tenantsResult.data) {
-        setTenants(tenantsResult.data);
-      }
+      if (roomsResult.success && tenantsResult.success && roomTypesResult.success &&
+          roomsResult.data && tenantsResult.data && roomTypesResult.data) {
+        const roomsWithTenants: RoomWithTenant[] = roomsResult.data.map((room: Room) => {
+          const tenant = tenantsResult.data?.find((t: Tenant) => t.roomNumber === room.number);
+          return {
+            ...room,
+            currentTenant: tenant ? {
+              id: tenant.id,
+              name: tenant.name
+            } : null
+          };
+        });
 
-      // โหลดข้อมูลมิเตอร์ทั้งหมด
-      const readingsResult = await getUtilityReadings(params.id);
-      if (readingsResult.success && readingsResult.data) {
-        setUtilityReadings(readingsResult.data);
+        setRooms(roomsWithTenants);
+        setSelectedRooms(roomsWithTenants.filter((room: RoomWithTenant) => room.status === "occupied"));
+        setRoomTypes(roomTypesResult.data);
+        setTenants(tenantsResult.data);
       }
     } catch (error) {
       console.error("Error loading initial data:", error);
@@ -75,139 +101,126 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
     loadInitialData();
   }, [loadInitialData]);
 
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const result = await getDormitory(params.id);
+        if (result.success && result.data?.config?.additionalFees) {
+          const formattedConfig: DormitoryConfigState = {
+            roomRate: result.data.config.additionalFees.utilities?.water?.perPerson || 0,
+            waterRate: result.data.config.additionalFees.utilities?.water?.perPerson || 0,
+            electricityRate: result.data.config.additionalFees.utilities?.electric?.unit || 0,
+            additionalFees: {
+              items: result.data.config.additionalFees.items || [],
+              floorRates: result.data.config.additionalFees.floorRates || {}
+            }
+          };
+          setDormitoryConfig(formattedConfig);
+        }
+      } catch (error) {
+        console.error("Error fetching config:", error);
+        toast.error("ไม่สามารถโหลดข้อมูลการตั้งค่าได้");
+      }
+    };
+    fetchConfig();
+  }, [params.id]);
+
   const handleSelectAllRooms = (checked: boolean) => {
     if (checked) {
-      setSelectedRooms(
-        rooms.filter((room) => room.status === "occupied").map((room) => room.id)
-      );
+      setSelectedRooms(rooms);
     } else {
       setSelectedRooms([]);
     }
   };
 
-  const handleSelectRoom = (roomId: string, checked: boolean) => {
+  const handleSelectRoom = (room: Room, checked: boolean) => {
     if (checked) {
-      setSelectedRooms([...selectedRooms, roomId]);
+      setSelectedRooms(prev => [...prev, room]);
     } else {
-      setSelectedRooms(selectedRooms.filter((id) => id !== roomId));
+      setSelectedRooms(prev => prev.filter(r => r.id !== room.id));
     }
   };
 
-  const calculateBillItems = (room: Room): BillItem[] => {
+  const generateBillItems = (room: Room, roomType: RoomType, config: DormitoryConfigState): BillItem[] => {
     const items: BillItem[] = [];
-    const roomType = roomTypes.find((type) => type.id === room.roomType);
-    if (!roomType) return items;
 
-    // เพิ่มค่าเช่าห้อง
+    // Add room rent
     items.push({
+      name: "ค่าเช่าห้อง",
       type: "rent",
-      description: "ค่าเช่าห้องพัก",
-      amount: roomType.basePrice,
+      amount: roomType.basePrice
     });
 
-    // เพิ่มค่าแอร์ (ถ้ามี)
-    if (room.hasAirConditioner && roomType.airConditionerFee) {
+    // Add floor rate if applicable
+    const floorRates = config.additionalFees?.floorRates;
+    if (floorRates && floorRates[room.floor]) {
       items.push({
-        type: "air_conditioner",
-        description: "ค่าบริการเครื่องปรับอากาศ",
-        amount: roomType.airConditionerFee,
+        name: `ค่าชั้น ${room.floor}`,
+        type: "floor_rate", 
+        amount: floorRates[room.floor]
       });
     }
 
-    // เพิ่มค่าที่จอดรถ (ถ้ามี)
-    if (room.hasParking && roomType.parkingFee) {
-      items.push({
-        type: "parking",
-        description: "ค่าที่จอดรถ",
-        amount: roomType.parkingFee,
-      });
-    }
-
-    // เพิ่มค่าน้ำ/ไฟ (ถ้ามีข้อมูลมิเตอร์)
-    const waterReading = utilityReadings.find(
-      (r) => r.type === "water" && r.roomId === room.id
-    );
-    const electricReading = utilityReadings.find(
-      (r) => r.type === "electric" && r.roomId === room.id
-    );
-
-    if (waterReading) {
-      items.push({
-        type: "water",
-        description: "ค่าน้ำประปา",
-        amount: waterReading.units * 18,
-        quantity: waterReading.units,
-        unitPrice: 18,
-        utilityReading: {
-          previous: waterReading.previousReading,
-          current: waterReading.currentReading,
-          units: waterReading.units,
-        },
-      });
-    }
-
-    if (electricReading) {
-      items.push({
-        type: "electric",
-        description: "ค่าไฟฟ้า",
-        amount: electricReading.units * 7,
-        quantity: electricReading.units,
-        unitPrice: 7,
-        utilityReading: {
-          previous: electricReading.previousReading,
-          current: electricReading.currentReading,
-          units: electricReading.units,
-        },
+    // Add additional fees based on services
+    if (room.additionalServices && room.additionalServices.length > 0 && config.additionalFees?.items) {
+      room.additionalServices.forEach(serviceId => {
+        const service = config.additionalFees.items.find(item => item.id === serviceId);
+        if (service) {
+          items.push({
+            name: service.name,
+            type: "additional_fee",
+            amount: service.amount
+          });
+        }
       });
     }
 
     return items;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedRooms.length === 0) {
-      toast.error("กรุณาเลือกห้องที่ต้องการสร้างบิล");
-      return;
-    }
+  const calculateRoomTotal = (room: Room) => {
+    const roomType = roomTypes.find(type => type.id === room.roomType);
+    if (!roomType || !dormitoryConfig) return 0;
 
+    return generateBillItems(room, roomType, dormitoryConfig).reduce((sum, item) => sum + item.amount, 0);
+  };
+
+  const handleGenerateBills = async () => {
     try {
-      setIsProcessing(true);
+      if (!dormitoryConfig) {
+        toast.error("กรุณารอโหลดข้อมูลการตั้งค่า");
+        return;
+      }
+
+      setIsLoading(true);
+
+      const billsToCreate = selectedRooms.map(room => {
+        const roomType = roomTypes.find(type => type.id === room.roomType);
+        if (!roomType) return null;
+
+        const billItems = generateBillItems(room, roomType, dormitoryConfig);
+        const totalAmount = billItems.reduce((sum, item) => sum + item.amount, 0);
+
+        const now = new Date().toISOString();
+
+        return {
+          roomId: room.id,
+          roomNumber: room.number,
+          tenantId: room.currentTenant?.id || null,
+          items: billItems,
+          totalAmount,
+          status: "pending" as const,
+          dueDate: dueDate,
+          createdAt: now,
+          updatedAt: now
+        };
+      }).filter((bill): bill is NonNullable<typeof bill> => bill !== null);
+
       let successCount = 0;
       let errorCount = 0;
 
-      for (const roomId of selectedRooms) {
-        const room = rooms.find((r) => r.id === roomId);
-        const tenant = tenants.find((t) => t.roomNumber === room?.number);
-        if (!room || !tenant) {
-          errorCount++;
-          continue;
-        }
-
-        const items = calculateBillItems(room);
-        const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
-
-        const billData: Omit<Bill, "id" | "createdAt" | "updatedAt"> = {
-          dormitoryId: params.id,
-          roomId: room.number,
-          tenantId: tenant.id,
-          month: formData.month,
-          year: formData.year,
-          dueDate: new Date(formData.dueDate),
-          status: "pending",
-          items,
-          totalAmount,
-          paidAmount: 0,
-          remainingAmount: totalAmount,
-          payments: [],
-          notificationsSent: {
-            initial: false,
-            reminder: false,
-            overdue: false,
-          },
-        };
-
-        const result = await createBill(params.id, billData);
+      for (const bill of billsToCreate) {
+        const result = await createBill(params.id, bill);
         if (result.success) {
           successCount++;
         } else {
@@ -226,15 +239,29 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
         toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
       }
     } catch (error) {
+      console.error("Error generating bills:", error);
+      toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedRooms.length === 0) {
+      toast.error("กรุณาเลือกห้องที่ต้องการสร้างบิล");
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      await handleGenerateBills();
+    } catch (error) {
       console.error("Error creating bills:", error);
       toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const calculateTotal = (room: Room) => {
-    return calculateBillItems(room).reduce((sum, item) => sum + item.amount, 0);
   };
 
   return (
@@ -256,59 +283,12 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                เดือน
-              </label>
-              <select
-                value={formData.month}
-                onChange={(e) =>
-                  setFormData({ ...formData, month: parseInt(e.target.value) })
-                }
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                required
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                  <option key={month} value={month}>
-                    {new Date(2000, month - 1).toLocaleString("th-TH", {
-                      month: "long",
-                    })}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ปี
-              </label>
-              <select
-                value={formData.year}
-                onChange={(e) =>
-                  setFormData({ ...formData, year: parseInt(e.target.value) })
-                }
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                required
-              >
-                {Array.from(
-                  { length: 5 },
-                  (_, i) => new Date().getFullYear() - 2 + i
-                ).map((year) => (
-                  <option key={year} value={year}>
-                    {year + 543}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
                 กำหนดชำระ
               </label>
               <input
                 type="date"
-                value={formData.dueDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, dueDate: e.target.value })
-                }
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
                 className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                 required
               />
@@ -369,9 +349,9 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
                       <td className="px-6 py-4">
                         <input
                           type="checkbox"
-                          checked={selectedRooms.includes(room.id)}
+                          checked={selectedRooms.includes(room)}
                           onChange={(e) =>
-                            handleSelectRoom(room.id, e.target.checked)
+                            handleSelectRoom(room, e.target.checked)
                           }
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
@@ -386,7 +366,7 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
                         {roomType?.name || "-"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                        ฿{calculateTotal(room).toLocaleString()}
+                        ฿{calculateRoomTotal(room).toLocaleString()}
                       </td>
                     </tr>
                   );

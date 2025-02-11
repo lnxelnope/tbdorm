@@ -1,28 +1,84 @@
 export interface RoomType {
   id: string;
-  name: string; // ชื่อรูปแบบห้อง เช่น มาตรฐาน, ห้องมุม
+  name: string;
   basePrice: number;
-  isDefault: boolean; // เป็นรูปแบบ default หรือไม่
-  description?: string; // คำอธิบายเพิ่มเติม (ถ้ามี)
+  isDefault: boolean;
+  description?: string;
   facilities?: string[];
-  size?: {
-    width: number;
-    length: number;
+  size?: string;
+}
+
+export interface Bill {
+  id: string;
+  dormitoryId: string;
+  tenantId: string;
+  roomId: string;
+  month: number;
+  year: number;
+  dueDate: string;
+  items: Array<{
+    name: string;
+    amount: number;
+  }>;
+  status: "pending" | "paid" | "overdue";
+  totalAmount: number;
+  remainingAmount: number;
+  paidAmount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Payment {
+  id: string;
+  billId: string;
+  tenantId: string;
+  amount: number;
+  method: 'cash' | 'bank_transfer' | 'promptpay';
+  paidAt: Date;
+  note?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface BillingConditions {
+  allowedDaysBeforeDueDate: number;
+  requireMeterReading: boolean;
+  waterBillingType: "perPerson" | "perUnit";
+  electricBillingType: "perUnit";
+  allowPartialBilling: boolean;
+  minimumStayForBilling: number;
+  gracePeriod: number;
+  lateFeeRate: number;
+  autoGenerateBill: boolean;
+}
+
+export interface AdditionalFees {
+  items: Array<{
+    id: string;
+    name: string;
+    amount: number;
+  }>;
+  utilities: {
+    water: {
+      perPerson: number | null;
+    };
+    electric: {
+      unit: number | null;
+    };
   };
-  airConditionerFee: number;
-  parkingFee: number;
+  floorRates?: Record<string, number>;
+}
+
+export interface AdditionalFeeItem {
+  id: string;
+  name: string;
+  amount: number;
+  description?: string;
 }
 
 export interface DormitoryConfig {
-  id: string;
-  dormitoryId: string;
-  roomTypes: {
-    [key: string]: RoomType;
-  };
+  roomTypes: Record<string, RoomType>;
   additionalFees: {
-    airConditioner: number | null; // ค่าบริการแอร์
-    parking: number | null; // ค่าที่จอดรถส่วนตัว
-    floorRates: Record<string, number>;
     utilities: {
       water: {
         perPerson: number | null;
@@ -31,7 +87,19 @@ export interface DormitoryConfig {
         unit: number | null;
       };
     };
+    items: Array<{
+      id: string;
+      name: string;
+      amount: number;
+    }>;
+    floorRates: {
+      [key: string]: number | null;
+    };
   };
+  dueDate?: number;
+  billingConditions?: BillingConditions;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Room {
@@ -42,101 +110,59 @@ export interface Room {
   status: 'available' | 'occupied' | 'maintenance';
   roomType: string;
   rent?: number;
-  hasAirConditioner: boolean;
-  hasParking: boolean;
-  initialMeterReading?: number; // เพิ่มฟิลด์ค่ามิเตอร์เริ่มต้น
-  tenantName?: string; // เพิ่ม tenantName
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-// คำนวณค่าเช่าทั้งหมด
-export const calculateTotalRent = (
-  room: Room,
-  roomType: RoomType,
-  config: DormitoryConfig
-): number => {
-  let total = roomType.basePrice || 0;
-
-  // บวกค่าแอร์ (ถ้ามี)
-  if (room.hasAirConditioner) {
-    total += config.additionalFees.airConditioner || 0;
-  }
-
-  // บวกค่าที่จอดรถ (ถ้ามี)
-  if (room.hasParking) {
-    total += config.additionalFees.parking || 0;
-  }
-
-  // บวก/ลบค่าชั้น
-  const floorRate = config.additionalFees.floorRates[room.floor.toString()] || 0;
-  total += floorRate;
-
-  return total;
-};
-
-export interface Dormitory {
-  id: string;
-  name: string;
-  address?: string;
-  totalFloors?: number;
-  floors?: number[];
-  facilities?: string[];
-  status?: string;
-  config?: {
-    roomTypes?: {
-      [key: string]: RoomType;
-    };
-    additionalFees?: {
-      airConditioner: number | null;
-      parking: number | null;
-      floorRates: Record<string, number>;
-      utilities: {
-        water: {
-          perPerson: number | null;
-        };
-        electric: {
-          unit: number | null;
-        };
-      };
-    };
-  };
-  images: string[];
-  description?: string;
-  phone?: string;
-  location?: {
-    latitude: string;
-    longitude: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-  totalRooms?: number;
-  rooms?: Room[];
-}
-
-export interface DormitoryStats {
-  totalRooms: number;
-  occupiedRooms: number;
-  availableRooms: number;
-  maintenanceRooms: number;
-  occupancyRate: number;
-  averageRent: number;
-  totalRevenue: number;
+  initialMeterReading: number;
+  additionalServices?: string[];
+  tenantName?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Tenant {
   id: string;
-  tenantId: string;
   name: string;
-  roomNumber: string;
-  roomId: string;
-  dormitoryId: string;
+  lineId: string;
+  idCard: string;
   phone: string;
   email: string;
-  moveInDate: string;
+  currentAddress: string;
+  workplace: string;
+  dormitoryId: string;
+  roomId: string;
+  roomNumber: string;
+  deposit: number;
+  startDate: string;
+  endDate?: string;
+  status: "active" | "inactive" | "moving_out";
+  createdAt: string;
+  updatedAt: string;
+  numberOfResidents: number;
+  numberOfOccupants?: number;
+  rentAdvance: number;
+  outstandingBalance: number;
+  emergencyContact: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
+  notes?: string;
+  documents?: {
+    name: string;
+    url: string;
+  }[];
+}
+
+export interface TenantWithBillStatus extends Tenant {
   status: 'active' | 'inactive' | 'moving_out';
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+}
+
+export interface TenantHistory extends Omit<Tenant, 'id'> {
+  id: string;
+  tenantId: string;
+  leaveDate: string;
+  leaveReason: 'incorrect_data' | 'end_contract';
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UtilityReading {
@@ -147,70 +173,18 @@ export interface UtilityReading {
   previousReading: number;
   currentReading: number;
   readingDate: Date;
-  units: number; // หน่วยที่ใช้ (currentReading - previousReading)
+  units: number;
   createdAt: Date;
   createdBy: string;
   isBilled: boolean;
   billId?: string;
 }
 
-export interface Bill {
-  id: string;
-  dormitoryId: string;
-  roomId: string;
-  tenantId: string;
-  month: number;
-  year: number;
-  dueDate: Date;
-  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
-  items: BillItem[];
-  totalAmount: number;
-  paidAmount: number;
-  remainingAmount: number;
-  createdAt: Date;
-  updatedAt: Date;
-  payments: Payment[];
-  notificationsSent: {
-    initial: boolean;
-    reminder: boolean;
-    overdue: boolean;
-  };
-}
-
-export interface BillItem {
-  type: 'rent' | 'water' | 'electric' | 'parking' | 'air_conditioner' | 'other';
-  description: string;
-  amount: number;
-  quantity?: number;
-  unitPrice?: number;
-  utilityReading?: {
-    previous: number;
-    current: number;
-    units: number;
-  };
-}
-
-export interface Payment {
-  id: string;
-  billId: string;
-  dormitoryId: string;
-  tenantId: string;
-  amount: number;
-  method: 'cash' | 'transfer' | 'promptpay';
-  status: 'pending' | 'completed' | 'failed';
-  reference?: string; // เลขอ้างอิงการโอน หรือ Transaction ID
-  evidence?: string; // URL รูปสลิป
-  paidAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  processedBy?: string; // ID ของผู้ดูแลที่ดำเนินการ
-}
-
 export interface PromptPayConfig {
   id: string;
   dormitoryId: string;
   type: 'personal' | 'corporate';
-  number: string; // เบอร์โทร หรือ เลขประจำตัวผู้เสียภาษี
+  number: string;
   name: string;
   isActive: boolean;
   qrCode?: string;
@@ -224,17 +198,16 @@ export interface LineNotifyConfig {
   accessToken: string;
   isActive: boolean;
   notificationSettings: {
-    billCreated: boolean; // แจ้งเตือนเมื่อสร้างบิลใหม่
-    billDueReminder: boolean; // แจ้งเตือนก่อนครบกำหนดชำระ
-    billOverdue: boolean; // แจ้งเตือนเมื่อค้างชำระ
-    paymentReceived: boolean; // แจ้งเตือนเมื่อได้รับการชำระเงิน
-    utilityReading: boolean; // แจ้งเตือนเมื่อบันทึกค่ามิเตอร์
+    billCreated: boolean;
+    billDueReminder: boolean;
+    billOverdue: boolean;
+    paymentReceived: boolean;
+    utilityReading: boolean;
   };
   createdAt: Date;
   updatedAt: Date;
 }
 
-// เพิ่ม interface สำหรับข้อมูลที่ส่งไปยัง Client Component
 export interface SimplifiedDormitory {
   id: string;
   name: string;
@@ -245,13 +218,14 @@ export interface SimplifiedDormitory {
         name: string;
         basePrice: number;
         isDefault: boolean;
-        airConditionerFee: number;
-        parkingFee: number;
       };
     };
     additionalFees?: {
-      airConditioner: number | null;
-      parking: number | null;
+      items: Array<{
+        id: string;
+        name: string;
+        amount: number;
+      }>;
       floorRates: Record<string, number>;
       utilities: {
         water: {
@@ -276,4 +250,52 @@ export interface MeterReading {
   status: 'pending' | 'billed';
   createdAt: string;
   updatedAt: string;
-} 
+}
+
+export interface Dormitory {
+  id: string;
+  name: string;
+  address: string;
+  images: string[];
+  config?: DormitoryConfig;
+  dueDate?: number;
+  billingConditions?: BillingConditions;
+  totalFloors?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DormitoryStats {
+  totalRooms: number;
+  occupiedRooms: number;
+  availableRooms: number;
+  maintenanceRooms: number;
+  occupancyRate: number;
+  averageRent: number;
+  totalRevenue: number;
+}
+
+export const calculateTotalRent = (
+  room: Room,
+  roomType: RoomType,
+  config: DormitoryConfig
+): number => {
+  let totalRent = roomType.basePrice;
+
+  // Add floor rate if applicable
+  if (config.additionalFees?.floorRates && config.additionalFees.floorRates[room.floor]) {
+    totalRent += config.additionalFees.floorRates[room.floor] || 0;
+  }
+
+  // Add additional services
+  if (room.additionalServices && room.additionalServices.length > 0) {
+    room.additionalServices.forEach(serviceId => {
+      const service = config.additionalFees?.items.find(item => item.id === serviceId);
+      if (service) {
+        totalRent += service.amount;
+      }
+    });
+  }
+
+  return totalRent;
+};
