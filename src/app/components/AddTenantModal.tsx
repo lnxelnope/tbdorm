@@ -24,8 +24,8 @@ export default function AddTenantModal({
 
       try {
         const result = await getLatestMeterReading(dormitoryId, roomId, 'electric');
-        if (result.success && result.data) {
-          setInitialMeterReading(result.data.currentReading);
+        if (result.success && result.data && 'currentReading' in result.data) {
+          setInitialMeterReading((result.data as { currentReading: number }).currentReading);
         }
       } catch (error) {
         console.error('Error loading meter reading:', error);

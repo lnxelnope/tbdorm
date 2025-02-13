@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { DormitoryConfig, Room, RoomType, Tenant } from "@/types/dormitory";
+import { DormitoryConfig, Room, RoomType } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import {
   getRooms,
   getRoomTypes,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
 
 interface BillItem {
   name: string;
@@ -30,19 +32,48 @@ interface RoomWithTenant extends Room {
 }
 
 interface DormitoryConfigState {
-  roomRate: number;
-  waterRate: number;
-  electricityRate: number;
   additionalFees: {
+    utilities: {
+      water: {
+        perPerson: number;
+      };
+      electric: {
+        unit: number;
+      };
+    };
     items: Array<{
       id: string;
       name: string;
       amount: number;
     }>;
-    floorRates: {
-      [key: string]: number;
-    };
+    floorRates: Record<string, number>;
   };
+  roomTypes: Record<string, RoomType>;
+}
+
+interface TenantFromFirebase {
+  id: string;
+  name: string;
+  roomNumber: string;
+  status: 'active' | 'moving_out' | 'moved_out';
+  numberOfResidents?: number;
+  electricityUsage?: {
+    unitsUsed: number;
+  } | number;
+  phone?: string;
+  lineId?: string;
+  idCard?: string;
+  address?: string;
+  emergencyContact?: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
+  moveInDate?: string;
+  moveOutDate?: string;
+  additionalServices?: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export default function BatchCreateBillPage({ params }: { params: { id: string } }) {
@@ -53,7 +84,7 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
   const [selectedRooms, setSelectedRooms] = useState<RoomWithTenant[]>([]);
   const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfigState | null>(null);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenants, setTenants] = useState<TenantFromFirebase[]>([]);
   const [dueDate, setDueDate] = useState(
     new Date(
       new Date().getFullYear(),
@@ -74,7 +105,7 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
       if (roomsResult.success && tenantsResult.success && roomTypesResult.success &&
           roomsResult.data && tenantsResult.data && roomTypesResult.data) {
         const roomsWithTenants: RoomWithTenant[] = roomsResult.data.map((room: Room) => {
-          const tenant = tenantsResult.data?.find((t: Tenant) => t.roomNumber === room.number);
+          const tenant = tenantsResult.data?.find((t: TenantFromFirebase) => t.roomNumber === room.number);
           return {
             ...room,
             currentTenant: tenant ? {
@@ -105,15 +136,24 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
     const fetchConfig = async () => {
       try {
         const result = await getDormitory(params.id);
-        if (result.success && result.data?.config?.additionalFees) {
+        if (result.success && result.data?.config) {
           const formattedConfig: DormitoryConfigState = {
-            roomRate: result.data.config.additionalFees.utilities?.water?.perPerson || 0,
-            waterRate: result.data.config.additionalFees.utilities?.water?.perPerson || 0,
-            electricityRate: result.data.config.additionalFees.utilities?.electric?.unit || 0,
             additionalFees: {
-              items: result.data.config.additionalFees.items || [],
-              floorRates: result.data.config.additionalFees.floorRates || {}
-            }
+              utilities: {
+                water: {
+                  perPerson: result.data.config.additionalFees?.utilities?.water?.perPerson || 0
+                },
+                electric: {
+                  unit: result.data.config.additionalFees?.utilities?.electric?.unit || 0
+                }
+              },
+              items: result.data.config.additionalFees?.items || [],
+              floorRates: Object.fromEntries(
+                Object.entries(result.data.config.additionalFees?.floorRates || {})
+                  .map(([key, value]) => [key, value || 0])
+              )
+            },
+            roomTypes: result.data.config.roomTypes || {}
           };
           setDormitoryConfig(formattedConfig);
         }
@@ -135,7 +175,18 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
 
   const handleSelectRoom = (room: Room, checked: boolean) => {
     if (checked) {
-      setSelectedRooms(prev => [...prev, room]);
+      const tenant = tenants.find(t => t.roomNumber === room.number);
+      setSelectedRooms(prev => [...prev, {
+        ...room,
+        currentTenant: tenant ? {
+          id: tenant.id,
+          name: tenant.name,
+          roomNumber: tenant.roomNumber,
+          status: tenant.status,
+          numberOfResidents: tenant.numberOfResidents,
+          electricityUsage: tenant.electricityUsage
+        } : null
+      } as RoomWithTenant]);
     } else {
       setSelectedRooms(prev => prev.filter(r => r.id !== room.id));
     }
@@ -180,9 +231,49 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
 
   const calculateRoomTotal = (room: Room) => {
     const roomType = roomTypes.find(type => type.id === room.roomType);
+    const tenant = tenants.find(t => t.roomNumber === room.number);
     if (!roomType || !dormitoryConfig) return 0;
 
-    return generateBillItems(room, roomType, dormitoryConfig).reduce((sum, item) => sum + item.amount, 0);
+    const floorRates = dormitoryConfig.additionalFees.floorRates || {};
+    const safeFloorRates = Object.entries(floorRates).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'number' ? value : 0;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const config: DormitoryConfig = {
+      roomTypes: dormitoryConfig.roomTypes,
+      additionalFees: {
+        ...dormitoryConfig.additionalFees,
+        floorRates: safeFloorRates,
+        utilities: {
+          water: {
+            perPerson: dormitoryConfig.additionalFees.utilities.water.perPerson || 0
+          },
+          electric: {
+            unit: dormitoryConfig.additionalFees.utilities.electric.unit || 0
+          }
+        }
+      }
+    };
+
+    if (!tenant) return calculateTotalPrice(room, config, null).total;
+
+    const unitsUsed = typeof tenant.electricityUsage === 'object' ? tenant.electricityUsage.unitsUsed : (tenant.electricityUsage || 0);
+    const tenantData = {
+      id: tenant.id,
+      name: tenant.name,
+      roomNumber: tenant.roomNumber,
+      status: tenant.status,
+      numberOfResidents: tenant.numberOfResidents || 1,
+      electricityUsage: {
+        unitsUsed,
+        previousReading: 0,
+        currentReading: unitsUsed,
+        charge: unitsUsed * (dormitoryConfig.additionalFees.utilities.electric.unit || 0)
+      }
+    };
+
+    return calculateTotalPrice(room, config, tenantData).total;
   };
 
   const handleGenerateBills = async () => {
@@ -201,18 +292,23 @@ export default function BatchCreateBillPage({ params }: { params: { id: string }
         const billItems = generateBillItems(room, roomType, dormitoryConfig);
         const totalAmount = billItems.reduce((sum, item) => sum + item.amount, 0);
 
-        const now = new Date().toISOString();
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
 
         return {
+          dormitoryId: params.id,
           roomId: room.id,
           roomNumber: room.number,
-          tenantId: room.currentTenant?.id || null,
+          tenantId: room.currentTenant?.id || "",
+          month,
+          year,
           items: billItems,
           totalAmount,
+          paidAmount: 0,
+          remainingAmount: totalAmount,
           status: "pending" as const,
-          dueDate: dueDate,
-          createdAt: now,
-          updatedAt: now
+          dueDate: dueDate
         };
       }).filter((bill): bill is NonNullable<typeof bill> => bill !== null);
 

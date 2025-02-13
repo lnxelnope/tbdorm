@@ -3,9 +3,21 @@ export interface RoomType {
   name: string;
   basePrice: number;
   isDefault: boolean;
+  description: string;
+  facilities: string[];
+}
+
+export interface BillItem {
+  name: string;
+  amount: number;
   description?: string;
-  facilities?: string[];
-  size?: string;
+  quantity?: number;
+  unitPrice?: number;
+  utilityReading?: {
+    previousReading: number;
+    currentReading: number;
+    unitsUsed: number;
+  };
 }
 
 export interface Bill {
@@ -16,14 +28,12 @@ export interface Bill {
   month: number;
   year: number;
   dueDate: string;
-  items: Array<{
-    name: string;
-    amount: number;
-  }>;
-  status: "pending" | "paid" | "overdue";
+  items: BillItem[];
+  status: "pending" | "paid" | "overdue" | "partially_paid";
   totalAmount: number;
   remainingAmount: number;
   paidAmount: number;
+  payments?: Payment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -31,10 +41,14 @@ export interface Bill {
 export interface Payment {
   id: string;
   billId: string;
+  dormitoryId: string;
   tenantId: string;
   amount: number;
   method: 'cash' | 'bank_transfer' | 'promptpay';
   paidAt: Date;
+  reference?: string;
+  evidence?: string;
+  status: string;
   note?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -73,7 +87,6 @@ export interface AdditionalFeeItem {
   id: string;
   name: string;
   amount: number;
-  description?: string;
 }
 
 export interface DormitoryConfig {
@@ -87,19 +100,12 @@ export interface DormitoryConfig {
         unit: number | null;
       };
     };
-    items: Array<{
-      id: string;
-      name: string;
-      amount: number;
-    }>;
-    floorRates: {
-      [key: string]: number | null;
-    };
+    items: AdditionalFeeItem[];
+    floorRates: Record<string, number | null>;
   };
   dueDate?: number;
-  billingConditions?: BillingConditions;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface Room {
@@ -107,11 +113,12 @@ export interface Room {
   dormitoryId: string;
   number: string;
   floor: number;
-  status: 'available' | 'occupied' | 'maintenance';
+  status: 'available' | 'occupied' | 'maintenance' | 'moving_out';
   roomType: string;
   rent?: number;
   initialMeterReading: number;
   additionalServices?: string[];
+  tenantId?: string;
   tenantName?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -120,39 +127,74 @@ export interface Room {
 export interface Tenant {
   id: string;
   name: string;
-  lineId: string;
-  idCard: string;
-  phone: string;
-  email: string;
-  currentAddress: string;
-  workplace: string;
-  dormitoryId: string;
-  roomId: string;
+  lineId?: string;
+  idCard?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
   roomNumber: string;
-  deposit: number;
-  startDate: string;
-  endDate?: string;
-  status: "active" | "inactive" | "moving_out";
-  createdAt: string;
-  updatedAt: string;
-  numberOfResidents: number;
-  numberOfOccupants?: number;
-  rentAdvance: number;
-  outstandingBalance: number;
-  emergencyContact: {
+  status: 'active' | 'moving_out' | 'moved_out';
+  moveInDate?: string;
+  moveOutDate?: string;
+  numberOfResidents?: number;
+  additionalServices?: string[];
+  emergencyContact?: {
     name: string;
     relationship: string;
     phone: string;
   };
-  notes?: string;
-  documents?: {
-    name: string;
-    url: string;
-  }[];
+  hasMeterReading?: boolean;
+  lastMeterReadingDate?: Date;
+  electricityUsage?: {
+    unitsUsed: number;
+    previousReading: number;
+    currentReading: number;
+    charge: number;
+  };
+  canCreateBill?: boolean;
+  statusMessage?: string;
+}
+
+export interface ExtendedDormitoryConfig {
+  roomTypes: Record<string, RoomType>;
+  additionalFees?: {
+    floorRates?: Record<string, number>;
+    utilities?: {
+      electric?: {
+        unit: number;
+      };
+      water?: {
+        perPerson: number;
+      };
+    };
+    items?: Array<{
+      id: string;
+      name: string;
+      amount: number;
+    }>;
+  };
+  roomRate?: number;
+  waterRate?: number;
+  electricityRate?: number;
+  commonFee?: number;
 }
 
 export interface TenantWithBillStatus extends Tenant {
-  status: 'active' | 'inactive' | 'moving_out';
+  hasMeterReading: boolean;
+  lastMeterReadingDate?: Date;
+  electricityUsage?: {
+    unitsUsed: number;
+    previousReading: number;
+    currentReading: number;
+    charge: number;
+  };
+  roomType: string;
+  floor: number;
+  numberOfResidents: number;
+  additionalServices?: string[];
+  canCreateBill: boolean;
+  daysUntilDue: number;
+  reason?: string;
 }
 
 export interface TenantHistory extends Omit<Tenant, 'id'> {
@@ -256,13 +298,15 @@ export interface Dormitory {
   id: string;
   name: string;
   address: string;
+  totalFloors: number;
+  totalRooms: number;
+  facilities: string[];
   images: string[];
+  status: 'active' | 'inactive';
   config?: DormitoryConfig;
-  dueDate?: number;
   billingConditions?: BillingConditions;
-  totalFloors?: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: any;
+  updatedAt: any;
 }
 
 export interface DormitoryStats {

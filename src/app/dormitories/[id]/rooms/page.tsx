@@ -3,7 +3,8 @@
 import React from "react";
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Search, Filter, ArrowLeft, Trash2 } from "lucide-react";
-import { DormitoryConfig, Room, RoomType, Tenant } from "@/types/dormitory";
+import { DormitoryConfig, Room, RoomType, AdditionalFeeItem } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import Link from "next/link";
 import { getRooms, getRoomTypes, getDormitory, queryTenants } from "@/lib/firebase/firebaseUtils";
 import AddRoomModal from "@/components/rooms/AddRoomModal";
@@ -57,6 +58,22 @@ interface DormitoryResult {
         };
       };
     };
+  };
+}
+
+interface RoomConfig {
+  roomTypes: Record<string, RoomType>;
+  additionalFees: {
+    utilities: {
+      water: {
+        perPerson: number | null;
+      };
+      electric: {
+        unit: number | null;
+      };
+    };
+    items: AdditionalFeeItem[];
+    floorRates: Record<string, number | null>;
   };
 }
 
@@ -142,10 +159,11 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
 
       const roomType = roomTypes.find((type) => type.id === room.roomType);
       if (roomType) {
-        const totalPrice = calculateTotalPrice(room, roomTypes, dormitoryConfig);
+        const tenant = tenants.find(t => t.roomNumber === room.number);
+        const totalPrice = calculateTotalPrice(room, roomTypes, dormitoryConfig, tenant);
         if (
-          totalPrice < filters.priceRange.min ||
-          totalPrice > filters.priceRange.max
+          totalPrice.total < filters.priceRange.min ||
+          totalPrice.total > filters.priceRange.max
         ) {
           return false;
         }
@@ -174,9 +192,9 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           return typeNameA.localeCompare(typeNameB) * direction;
         }
         case 'price': {
-          const priceA = calculateTotalPrice(a, roomTypes, dormitoryConfig);
-          const priceB = calculateTotalPrice(b, roomTypes, dormitoryConfig);
-          return (priceA - priceB) * direction;
+          const priceA = calculateTotalPrice(a, roomTypes, dormitoryConfig, tenants.find(t => t.roomNumber === a.number));
+          const priceB = calculateTotalPrice(b, roomTypes, dormitoryConfig, tenants.find(t => t.roomNumber === b.number));
+          return (priceA.total - priceB.total) * direction;
         }
         default:
           return 0;
@@ -319,7 +337,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedRooms(sortedAndFilteredRooms.map(room => room.id));
+      const allRoomIds = sortedAndFilteredRooms.map(room => room.id);
+      setSelectedRooms(allRoomIds);
     } else {
       setSelectedRooms([]);
     }
@@ -334,29 +353,44 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   };
 
   const handleDeleteSelectedRooms = async () => {
-    if (!confirm(`คุณแน่ใจหรือไม่ที่จะลบห้องที่เลือกทั้งหมด ${selectedRooms.length} ห้อง?`)) {
+    if (!selectedRooms.length) return;
+
+    if (!window.confirm(`คุณแน่ใจหรือไม่ที่จะลบห้องพักที่เลือกทั้งหมด ${selectedRooms.length} ห้อง?`)) {
       return;
     }
 
     try {
-      const results = await Promise.all(
-        selectedRooms.map(roomId => deleteRoom(dormId, roomId))
-      );
+      let successCount = 0;
+      let errorCount = 0;
 
-      const failedCount = results.filter(result => !result.success).length;
-      
-      if (failedCount > 0) {
-        toast.error(`ไม่สามารถลบห้องได้ ${failedCount} ห้อง`);
-      } else {
-        toast.success(`ลบห้องพักเรียบร้อยแล้ว ${selectedRooms.length} ห้อง`);
-        // อัพเดทรายการห้องพัก
-        setRooms(prev => prev.filter(room => !selectedRooms.includes(room.id)));
-        // รีเซ็ตรายการที่เลือก
+      for (const roomId of selectedRooms) {
+        try {
+          const result = await deleteRoom(dormId, roomId);
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          console.error(`Error deleting room ${roomId}:`, error);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        // รีโหลดข้อมูลห้องพัก
+        const roomsResult = await getRooms(dormId);
+        if (roomsResult.success && roomsResult.data) {
+          setRooms(roomsResult.data);
+        }
         setSelectedRooms([]);
+        toast.success(`ลบห้องพักสำเร็จ ${successCount} ห้อง${errorCount > 0 ? `, ไม่สำเร็จ ${errorCount} ห้อง` : ''}`);
+      } else {
+        toast.error('ไม่สามารถลบห้องพักได้');
       }
     } catch (error) {
-      console.error("Error deleting rooms:", error);
-      toast.error("เกิดข้อผิดพลาดในการลบห้องพัก");
+      console.error('Error deleting rooms:', error);
+      toast.error('เกิดข้อผิดพลาดในการลบห้องพัก');
     }
   };
 
@@ -422,7 +456,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         </div>
         <div className="flex gap-4">
           <Link
-            href={`/dormitories/${dormId}/room-types`}
+            href={`/dormitories/${dormId}/config`}
             className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
           >
             จัดการประเภทห้อง
@@ -491,8 +525,20 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  เลขห้อง
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={selectedRooms.length === sortedAndFilteredRooms.length && sortedAndFilteredRooms.length > 0}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                </th>
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('number')}
+                >
+                  เลขห้อง {sortConfig.key === 'number' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ชั้น
@@ -529,7 +575,15 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                 const tenant = tenants.find((t) => t.roomNumber === room.number);
 
                 return (
-                  <tr key={room.id}>
+                  <tr key={room.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedRooms.includes(room.id)}
+                        onChange={(e) => handleSelectRoom(room.id, e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       <button
                         onClick={() => handleRoomClick(room)}
@@ -548,8 +602,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       {tenant?.numberOfResidents || '-'} คน
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {dormitoryConfig?.additionalFees?.utilities?.electric?.unit ? 
-                        `${dormitoryConfig.additionalFees.utilities.electric.unit} บาท/หน่วย` : '-'}
+                      {tenant?.electricityUsage ? 
+                        `${tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย (${tenant.electricityUsage.previousReading} → ${tenant.electricityUsage.currentReading})` : '-'}
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm space-y-1">
@@ -574,8 +628,16 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                             <span className="font-medium">ค่าน้ำ ({tenant.numberOfResidents} คน):</span> +฿{(dormitoryConfig.additionalFees.utilities.water.perPerson * tenant.numberOfResidents).toLocaleString()}
                           </div>
                         )}
+                        {tenant?.electricityUsage && dormitoryConfig.additionalFees.utilities.electric.unit && (
+                          <div className="text-gray-900">
+                            <span className="font-medium">ค่าไฟ ({tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย):</span> +฿{(tenant.electricityUsage.unitsUsed * dormitoryConfig.additionalFees.utilities.electric.unit).toLocaleString()}
+                            <div className="text-xs text-gray-500 ml-6">
+                              ({tenant.electricityUsage.previousReading} → {tenant.electricityUsage.currentReading})
+                            </div>
+                          </div>
+                        )}
                         <div className="border-t pt-1 mt-1 font-medium">
-                          รวม: ฿{calculateTotalPrice(room, roomTypes, dormitoryConfig).toLocaleString()}
+                          รวม: ฿{calculateTotalPrice(room, roomTypes, dormitoryConfig, tenant).total.toLocaleString()}
                         </div>
                       </div>
                     </td>

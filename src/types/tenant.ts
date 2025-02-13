@@ -1,25 +1,28 @@
 export interface Tenant {
   id: string;
   name: string;
-  idCard: string;
-  phone: string;
-  email: string;
-  lineId: string;
-  currentAddress: string;
-  workplace: string;
-  dormitoryId: string;
-  roomNumber: string;
-  startDate: string;
-  deposit: number;
-  numberOfResidents: number;
-  emergencyContact: {
+  phone?: string;
+  lineId?: string;
+  idCard?: string;
+  address?: string;
+  emergencyContact?: {
     name: string;
     relationship: string;
-    phone: string;
+    phone?: string;
   };
-  outstandingBalance: number;
-  status: 'active' | 'inactive';
-  createdAt: Date;
-  updatedAt: Date;
-  dormitoryName?: string;
+  roomNumber: string;
+  numberOfResidents?: number;
+  moveInDate?: string;
+  moveOutDate?: string;
+  status: 'active' | 'moving_out' | 'moved_out';
+  additionalServices?: string[];
+  electricityUsage?: {
+    unitsUsed: number;
+  };
+  currentAddress?: string;
+  workplace?: string;
+  dormitoryId: string;
+  roomId: string;
+  createdAt: string;
+  updatedAt: string;
 }

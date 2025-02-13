@@ -12,17 +12,17 @@ import { uploadPaymentEvidence } from '@/lib/firebase/storage';
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: () => void;
   bill: Bill;
   dormitoryId: string;
-  onPaymentComplete: () => void;
 }
 
 export default function PaymentModal({
   isOpen,
   onClose,
+  onSuccess,
   bill,
-  dormitoryId,
-  onPaymentComplete
+  dormitoryId
 }: PaymentModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'promptpay'>('cash');
   const [amount, setAmount] = useState(bill.totalAmount - (bill.paidAmount || 0));
@@ -84,7 +84,7 @@ export default function PaymentModal({
 
       if (updateResult.success) {
         toast.success('บันทึกการชำระเงินเรียบร้อยแล้ว');
-        onPaymentComplete();
+        onSuccess();
         onClose();
       } else {
         throw new Error('Failed to update bill status');

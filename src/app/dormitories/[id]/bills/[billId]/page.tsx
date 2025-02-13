@@ -83,7 +83,7 @@ export default function BillDetailsPage({
     switch (method) {
       case "cash":
         return "เงินสด";
-      case "transfer":
+      case "bank_transfer":
         return "โอนเงิน";
       case "promptpay":
         return "พร้อมเพย์";
@@ -235,8 +235,8 @@ export default function BillDetailsPage({
                   {item.description}
                   {item.utilityReading && (
                     <div className="text-xs text-gray-500">
-                      เลขมิเตอร์: {item.utilityReading.previous} -{" "}
-                      {item.utilityReading.current} ({item.utilityReading.units}{" "}
+                      เลขมิเตอร์: {item.utilityReading.previousReading} -{" "}
+                      {item.utilityReading.currentReading} ({item.utilityReading.unitsUsed}{" "}
                       หน่วย)
                     </div>
                   )}
@@ -266,7 +266,7 @@ export default function BillDetailsPage({
           </tbody>
         </table>
 
-        {bill.payments.length > 0 && (
+        {bill.payments && bill.payments.length > 0 && (
           <div className="px-6 py-4 border-t border-gray-200">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               ประวัติการชำระเงิน

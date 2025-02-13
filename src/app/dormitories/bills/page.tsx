@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { queryDormitories, getRooms, getDormitory, queryTenants, getLatestMeterReading, getDormitoryConfig, saveMeterReading } from "@/lib/firebase/firebaseUtils";
+import { queryDormitories, getRooms, getDormitory, queryTenants, getLatestMeterReading, getDormitoryConfig, saveMeterReading, getRoom } from "@/lib/firebase/firebaseUtils";
 import { getBillsByDormitory, createBill, deleteBill } from "@/lib/firebase/billUtils";
-import { Dormitory, Room, Tenant, DormitoryConfig } from "@/types/dormitory";
+import { Dormitory, Room, Tenant, DormitoryConfig, RoomType } from "@/types/dormitory";
 import { MeterReading } from "@/types/meter";
 import { Bill, BillItem } from "@/types/bill";
 import { Plus, Search, Loader2, Zap, XCircle, Clock, AlertCircle, AlertTriangle, Trash2 } from "lucide-react";
@@ -13,31 +13,92 @@ import CreateBillModal from "./components/CreateBillModal";
 import PaymentModal from "./components/PaymentModal";
 import { useRouter } from "next/navigation";
 import UnrecordedMeterRoom from "./components/UnrecordedMeterRoom";
+import { calculateTotalPrice } from "../[id]/rooms/utils";
+
+interface BillItemData {
+  name: string;
+  type: 'rent' | 'water' | 'electric' | 'other';
+  amount: number;
+  description?: string;
+  unitPrice?: number;
+  units?: number;
+}
+
+interface ExtendedDormitoryConfig extends DormitoryConfig {
+  electricityRate?: number;
+  waterRate?: number;
+  roomRate?: number;
+  commonFee?: number;
+}
 
 interface TenantWithBillStatus extends Tenant {
-  canCreateBill: boolean;
-  daysUntilDue: number;
   hasMeterReading: boolean;
   lastMeterReadingDate?: Date;
-  numberOfOccupants?: number;
-  roomType?: string;
   electricityUsage?: {
+    unitsUsed: number;
     previousReading: number;
     currentReading: number;
-    unitsUsed: number;
     charge: number;
+  };
+  roomType: string;
+  floor: number;
+  numberOfResidents: number;
+  additionalServices?: string[];
+  canCreateBill: boolean;
+  daysUntilDue: number;
+  reason?: string;
+  idCardNumber?: string;
+  moveInDate?: string;
+}
+
+interface BillData {
+  dormitoryId: string;
+  roomNumber: string;
+  tenantId: string;
+  tenantName: string;
+  month: number;
+  year: number;
+  dueDate: Date;
+  items: BillItem[];
+  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  payments: any[];
+  notificationsSent: {
+    initial: boolean;
+    reminder: boolean;
+    overdue: boolean;
   };
 }
 
+interface RoomData {
+  [key: string]: Room;
+}
+
 export default function BillsPage() {
+  const [rooms, setRooms] = useState<RoomData>({});
   const [config, setConfig] = useState<DormitoryConfig | null>(null);
+  const [selectedDormitory, setSelectedDormitory] = useState<string>("");
+  const [dormitories, setDormitories] = useState<Dormitory[]>([]);
+  const [tenants, setTenants] = useState<TenantWithBillStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const router = useRouter();
+  const [showAllTenants, setShowAllTenants] = useState(false);
+  const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
 
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const result = await getDormitoryConfig();
-        setConfig(result);
+        const config = await getDormitoryConfig();
+        setConfig(config as ExtendedDormitoryConfig);
         setIsLoading(false);
       } catch (error) {
         console.error('Error loading config:', error);
@@ -47,6 +108,27 @@ export default function BillsPage() {
 
     loadConfig();
   }, []);
+
+  useEffect(() => {
+    const loadDormitoryConfig = async () => {
+      if (!selectedDormitory) return;
+      
+      try {
+        const dormResult = await getDormitory(selectedDormitory);
+        if (!dormResult.success || !dormResult.data?.config) {
+          toast.error("ไม่พบข้อมูลการตั้งค่าของหอพัก");
+          return;
+        }
+
+        const dormConfig = dormResult.data.config;
+        setDormitoryConfig(dormConfig);
+      } catch (error) {
+        console.error('Error loading dormitory config:', error);
+      }
+    };
+
+    loadDormitoryConfig();
+  }, [selectedDormitory]);
 
   if (isLoading) {
     return (
@@ -85,14 +167,14 @@ export default function BillsPage() {
         <ul className="mt-2 text-sm text-blue-700 list-disc list-inside">
           <li>ผู้เช่าต้องมีการจดมิเตอร์ประจำเดือนก่อนจึงจะสามารถสร้างบิลได้</li>
           <li>บิลจะถูกสร้างตามรอบที่กำหนดในการตั้งค่า</li>
-          <li>สามารถจดมิเตอร์ได้โดยคลิกที่ปุ่ม "จดมิเตอร์" ในรายการ</li>
+          <li>สามารถจดมิเตอร์ได้โดยคลิกที่ปุ่ม &quot;จดมิเตอร์&quot; ในรายการ</li>
         </ul>
       </div>
     </div>
   );
 }
 
-function BillsList({ config }: { config: DormitoryConfig | null }) {
+function BillsList({ config }: { config: ExtendedDormitoryConfig | null }) {
   const [isLoading, setIsLoading] = useState(true);
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
   const [selectedDormitory, setSelectedDormitory] = useState<string>('');
@@ -104,13 +186,92 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [tenants, setTenants] = useState<TenantWithBillStatus[]>([]);
+  const [rooms, setRooms] = useState<Record<string, Room>>({});
+  const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
   const router = useRouter();
   const [showAllTenants, setShowAllTenants] = useState(false);
 
-  // คำนวณยอดรวมสำหรับการแสดงผลและบิล
-  const calculateTotalAmount = (tenant: Tenant, config?: DormitoryConfig) => {
+  // โหลดข้อมูลห้องพักและ config
+  useEffect(() => {
+    const loadData = async () => {
+      if (!selectedDormitory) return;
+
+      try {
+        // ดึงข้อมูลห้องพักทั้งหมดในหอพัก
+        const [roomsResult, dormResult] = await Promise.all([
+          getRooms(selectedDormitory),
+          getDormitory(selectedDormitory)
+        ]);
+
+        if (roomsResult.success && roomsResult.data) {
+          const roomsMap: Record<string, Room> = {};
+          (roomsResult.data as Room[]).forEach((room: Room) => {
+            roomsMap[room.number] = room;
+          });
+          setRooms(roomsMap);
+        }
+
+        if (dormResult.success && dormResult.data?.config) {
+          setDormitoryConfig(dormResult.data.config);
+        }
+      } catch (error) {
+        console.error("Error loading data:", error);
+        toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+      }
+    };
+
+    loadData();
+  }, [selectedDormitory]);
+
+  // คำนวณยอดรวม
+  const calculateTotalAmount = (tenant: TenantWithBillStatus) => {
+    const room = rooms[tenant.roomNumber];
+    if (!room || !config?.roomTypes) return 0;
+    
+    return calculateTotalPrice(room, dormitoryConfig || config, tenant).total;
+  };
+
+  // แสดงรายละเอียดค่าใช้จ่าย
+  const renderBillDetails = (tenant: TenantWithBillStatus) => {
+    if (!config || !tenant.roomNumber) return null;
+
+    const room = rooms[tenant.roomNumber];
+    if (!room) return null;
+
+    const priceDetails = calculateTotalPrice(room, dormitoryConfig || config, tenant);
+
     return (
-      (dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0)
+      <div className="text-sm space-y-1">
+        <div className="text-gray-900">
+          <span className="font-medium">ค่าห้อง:</span> ฿{priceDetails.breakdown.basePrice.toLocaleString()}
+        </div>
+        {priceDetails.breakdown.floorRate !== 0 && (
+          <div className={priceDetails.breakdown.floorRate < 0 ? "text-red-500" : "text-green-600"}>
+            <span className="font-medium">ค่าชั้น {room.floor}:</span> {priceDetails.breakdown.floorRate > 0 ? '+' : ''}฿{priceDetails.breakdown.floorRate.toLocaleString()}
+          </div>
+        )}
+        {priceDetails.breakdown.additionalServices > 0 && (
+          <div className="text-gray-900">
+            <span className="font-medium">ค่าบริการเพิ่มเติม:</span> +฿{priceDetails.breakdown.additionalServices.toLocaleString()}
+          </div>
+        )}
+        {priceDetails.breakdown.water > 0 && (
+          <div className="text-gray-900">
+            <span className="font-medium">ค่าน้ำ ({tenant.numberOfResidents || 1} คน):</span> +฿{priceDetails.breakdown.water.toLocaleString()}
+          </div>
+        )}
+        {priceDetails.breakdown.electricity > 0 && tenant.electricityUsage && (
+          <div className="text-gray-900">
+            <span className="font-medium">ค่าไฟ ({tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย):</span> +฿{priceDetails.breakdown.electricity.toLocaleString()}
+            <div className="text-xs text-gray-500 ml-6">
+              ({tenant.electricityUsage.previousReading} → {tenant.electricityUsage.currentReading})
+            </div>
+          </div>
+        )}
+        <div className="border-t pt-1 mt-1 font-medium">
+          รวม: ฿{priceDetails.total.toLocaleString()}
+        </div>
+      </div>
     );
   };
 
@@ -251,58 +412,85 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
       return;
     }
 
-    if (!selectedDormitory) {
-      toast.error("กรุณาเลือกหอพัก");
+    if (!config) {
+      toast.error("ไม่พบการตั้งค่าของหอพัก");
       return;
     }
 
     try {
-      // สร้างรายการในบิล
-      const billItems: BillItem[] = [
+      // ดึงข้อมูลหอพัก
+      const dormitory = dormitories.find(d => d.id === selectedDormitory);
+      if (!dormitory?.config?.roomTypes) {
+        toast.error("ไม่พบข้อมูลราคาห้องพัก กรุณาตั้งค่าราคาห้องพักก่อน");
+        return;
+      }
+
+      // ดึงข้อมูลห้องพัก
+      const roomData = await getRoom(selectedDormitory, tenant.roomNumber);
+      if (!roomData.success || !roomData.data) {
+        toast.error("ไม่พบข้อมูลห้องพัก");
+        return;
+      }
+
+      // หาราคาห้องจาก roomType ของห้อง
+      const roomTypeData = config.roomTypes?.[roomData.data.roomType];
+      if (!roomTypeData?.basePrice) {
+        toast.error("ไม่พบข้อมูลราคาห้องพัก กรุณาตรวจสอบการตั้งค่าราคาห้องพัก");
+        return;
+      }
+
+      const waterFeePerPerson = config.additionalFees?.utilities?.water?.perPerson || 0;
+      const numberOfOccupants = tenant.numberOfResidents || 1;
+      const waterFee = waterFeePerPerson * numberOfOccupants;
+      const electricityFee = tenant.electricityUsage?.charge || 0;
+
+      const items: BillItem[] = [
         {
-          type: 'rent',
-          description: 'ค่าเช่าห้องพัก',
-          amount: dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0
+          type: "rent",
+          name: "ค่าห้องพัก",
+          amount: roomTypeData.basePrice,
+          description: `ค่าเช่าห้องพักประจำเดือน ${new Date().getMonth() + 1}/${new Date().getFullYear()}`
+        },
+        {
+          type: "water",
+          name: "ค่าน้ำประปา",
+          amount: waterFee,
+          description: `ค่าน้ำประปาแบบเหมาจ่าย (${numberOfOccupants} คน)`,
+          unit: numberOfOccupants,
+          rate: waterFeePerPerson
         }
       ];
 
       // เพิ่มค่าไฟถ้ามีการจดมิเตอร์
       if (tenant.electricityUsage) {
-        billItems.push({
-          type: 'electric',
-          description: 'ค่าไฟฟ้า',
-          amount: tenant.electricityUsage.charge,
-          utilityReading: {
-            previous: tenant.electricityUsage.previousReading,
-            current: tenant.electricityUsage.currentReading,
-            units: tenant.electricityUsage.unitsUsed
-          }
+        items.push({
+          type: "electric",
+          name: "ค่าไฟฟ้า",
+          amount: electricityFee,
+          description: `ค่าไฟฟ้า ${tenant.electricityUsage.unitsUsed} หน่วย (${tenant.electricityUsage.previousReading} - ${tenant.electricityUsage.currentReading})`,
+          unit: tenant.electricityUsage.unitsUsed,
+          rate: config.additionalFees?.utilities?.electric?.unit || 0
         });
       }
 
-      // เพิ่มค่าน้ำ (คำนวณตามจำนวนผู้พักอาศัย)
-      billItems.push({
-        type: 'water',
-        description: 'ค่าน้ำประปา',
-        amount: (config?.waterRate || 0) * (tenant.numberOfOccupants || 1)
-      });
+      const totalAmount = items.reduce((sum: number, item: BillItem) => sum + item.amount, 0);
 
-      // คำนวณยอดรวมสำหรับการแสดงผลและบิล
-      const billTotal = calculateTotalAmount(tenant, config);
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + (config.dueDate || 5));
 
-      // สร้างบิลใหม่
-      const newBill = {
+      const billData: BillData = {
         dormitoryId: selectedDormitory,
         roomNumber: tenant.roomNumber,
+        tenantId: tenant.id,
         tenantName: tenant.name,
         month: new Date().getMonth() + 1,
         year: new Date().getFullYear(),
-        dueDate: new Date(),
-        status: 'pending',
-        items: billItems,
-        totalAmount: billTotal,
+        dueDate,
+        items,
+        status: "pending",
+        totalAmount,
+        remainingAmount: totalAmount,
         paidAmount: 0,
-        remainingAmount: billTotal,
         payments: [],
         notificationsSent: {
           initial: false,
@@ -311,35 +499,20 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
         }
       };
 
-      // บันทึกบิลลงฐานข้อมูล
-      const result = await createBill(newBill, selectedDormitory);
-
+      const result = await createBill(selectedDormitory, billData);
       if (result.success) {
-        toast.success('สร้างบิลเรียบร้อยแล้ว');
-        
-        // อัพเดทข้อมูลบิล
+        toast.success("สร้างบิลเรียบร้อยแล้ว");
+        // Reload bills after creating new one
         const billsResult = await getBillsByDormitory(selectedDormitory);
         if (billsResult.success && billsResult.data) {
           setBills(billsResult.data as Bill[]);
         }
-
-        // อัพเดทรายการผู้เช่า
-        const updatedTenants = tenants.map(t => {
-          if (t.id === tenant.id) {
-            return {
-              ...t,
-              hasMeterReading: false // รีเซ็ตสถานะการจดมิเตอร์
-            };
-          }
-          return t;
-        });
-        setTenants(updatedTenants);
       } else {
-        toast.error('เกิดข้อผิดพลาดในการสร้างบิล');
+        toast.error(result.error?.toString() || "ไม่สามารถสร้างบิลได้");
       }
     } catch (error) {
-      console.error('Error creating bill:', error);
-      toast.error('เกิดข้อผิดพลาดในการสร้างบิล');
+      console.error("Error creating bill:", error);
+      toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
     }
   };
 
@@ -423,7 +596,7 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
   });
 
   // ฟังก์ชันสำหรับแสดงสถานะ
-  const getBillStatus = (tenant: TenantWithBillStatus, config: DormitoryConfig) => {
+  const getBillStatus = (tenant: TenantWithBillStatus, config: ExtendedDormitoryConfig) => {
     // เช็คเงื่อนไขพื้นฐาน
     if (!tenant.roomNumber) {
       return {
@@ -453,6 +626,18 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
     };
   };
 
+  // เพิ่มฟังก์ชันช่วยดึงข้อมูลห้อง
+  const getRoomPrice = (roomNumber: string) => {
+    const room = rooms[roomNumber];
+    if (!room || !config?.roomTypes) return { name: 'ไม่ระบุ', price: 0 };
+
+    const roomTypeConfig = config.roomTypes[room.roomType];
+    return {
+      name: roomTypeConfig?.name || 'ไม่ระบุ',
+      price: roomTypeConfig?.basePrice || 0
+    };
+  };
+
   if (isLoading || !config) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -463,8 +648,6 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
       </div>
     );
   }
-
-  const selectedDorm = dormitories.find(d => d.id === selectedDormitory);
 
   // ดึงเฉพาะห้องที่มีผู้เช่าและสถานะปกติ
   const activeRooms = tenants.filter(tenant => 
@@ -535,51 +718,46 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
           const billItems: BillItem[] = [
             {
               type: 'rent',
+              name: 'ค่าเช่าห้องพัก',
               description: 'ค่าเช่าห้องพัก',
-              amount: dormitories.find(d => d.id === selectedDormitory)?.config?.roomTypes?.[tenant.roomType || 'default']?.basePrice || 0
+              amount: getRoomPrice(tenant.roomNumber).price
             }
           ];
 
           if (tenant.electricityUsage) {
             billItems.push({
               type: 'electric',
+              name: 'ค่าไฟฟ้า',
               description: 'ค่าไฟฟ้า',
               amount: tenant.electricityUsage.charge,
-              utilityReading: {
-                previous: tenant.electricityUsage.previousReading,
-                current: tenant.electricityUsage.currentReading,
-                units: tenant.electricityUsage.unitsUsed
-              }
+              unit: tenant.electricityUsage.unitsUsed,
+              rate: config?.additionalFees?.utilities?.electric?.unit || 0
             });
           }
 
           billItems.push({
             type: 'water',
+            name: 'ค่าน้ำประปา',
             description: 'ค่าน้ำประปา',
             amount: config?.waterRate || 0
-          });
-
-          billItems.push({
-            type: 'other',
-            description: 'ค่าส่วนกลาง',
-            amount: config?.commonFee || 0
           });
 
           const dueDate = new Date();
           dueDate.setDate(dueDate.getDate() + 7);
 
-          const newBill = {
+          const billData: BillData = {
             dormitoryId: selectedDormitory,
             roomNumber: tenant.roomNumber,
+            tenantId: tenant.id,
             tenantName: tenant.name,
             month: new Date().getMonth() + 1,
             year: new Date().getFullYear(),
             dueDate,
-            status: 'pending',
             items: billItems,
-            totalAmount: calculateTotalAmount(tenant, config),
+            status: "pending",
+            totalAmount: await calculateTotalAmount(tenant),
+            remainingAmount: await calculateTotalAmount(tenant),
             paidAmount: 0,
-            remainingAmount: calculateTotalAmount(tenant, config),
             payments: [],
             notificationsSent: {
               initial: false,
@@ -588,7 +766,7 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
             }
           };
 
-          const result = await createBill(newBill, selectedDormitory);
+          const result = await createBill(selectedDormitory, billData);
           if (result.success) {
             successCount++;
           } else {
@@ -828,33 +1006,7 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
                         {/* ข้อมูลค่าใช้จ่าย */}
                         <div className="bg-white rounded-lg p-4 border border-gray-200">
                           <h4 className="font-medium mb-3">รายการค่าใช้จ่าย</h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-sm">ค่าห้องพัก</span>
-                              <span className="text-sm">฿{config?.roomRate?.toLocaleString() || 0}</span>
-                            </div>
-                            {tenant.electricityUsage && (
-                              <div className="flex justify-between">
-                                <span className="text-sm">ค่าไฟฟ้า ({tenant.electricityUsage.unitsUsed.toFixed(2)} หน่วย)</span>
-                                <span className="text-sm">฿{tenant.electricityUsage.charge.toLocaleString()}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span className="text-sm">ค่าน้ำ</span>
-                              <span className="text-sm">฿{config?.waterRate?.toLocaleString() || 0}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm">ค่าส่วนกลาง</span>
-                              <span className="text-sm">฿{config?.commonFee?.toLocaleString() || 0}</span>
-                            </div>
-                            {/* คำนวณยอดรวม */}
-                            <div className="border-t pt-2 mt-2">
-                              <div className="flex justify-between font-medium">
-                                <span>ยอดรวมทั้งหมด</span>
-                                <span>฿{calculateTotalAmount(tenant, config).toLocaleString()}</span>
-                              </div>
-                            </div>
-                          </div>
+                          {renderBillDetails(tenant)}
                         </div>
 
                         {/* สถานะการจดมิเตอร์ */}
@@ -934,7 +1086,7 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
                           {bill.id}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {selectedDorm?.name}
+                          {dormitories.find(d => d.id === selectedDormitory)?.name}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {bill.roomNumber}
@@ -1006,15 +1158,17 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
             setIsCreateModalOpen(false);
             setSelectedRoom(null);
           }}
-          dormitoryId={selectedDormitory}
-          room={selectedRoom}
-          onBillCreated={() => {
-            getBillsByDormitory(selectedDormitory).then(result => {
+          onSuccess={() => {
+            setIsCreateModalOpen(false);
+            // Reload bills
+            getBillsByDormitory(selectedDormitory).then((result) => {
               if (result.success && result.data) {
                 setBills(result.data as Bill[]);
               }
             });
           }}
+          selectedRoom={selectedRoom}
+          dormitoryId={selectedDormitory}
         />
       )}
 
@@ -1027,7 +1181,7 @@ function BillsList({ config }: { config: DormitoryConfig | null }) {
           }}
           bill={selectedBill}
           dormitoryId={selectedDormitory}
-          onPaymentComplete={() => {
+          onSuccess={() => {
             getBillsByDormitory(selectedDormitory).then(result => {
               if (result.success && result.data) {
                 setBills(result.data as Bill[]);

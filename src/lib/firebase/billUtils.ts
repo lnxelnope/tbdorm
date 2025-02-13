@@ -5,16 +5,24 @@ import { Bill, MeterReading, PaymentReceipt, PromptPayConfig, BankAccount, Payme
 interface CreateBillData {
   dormitoryId: string;
   roomNumber: string;
+  tenantId: string;
   tenantName: string;
   month: number;
   year: number;
   dueDate: Date;
-  status: string;
-  items: any[];
+  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  items: {
+    name: string;
+    type: 'rent' | 'water' | 'electric' | 'other';
+    amount: number;
+    description?: string;
+    unitPrice?: number;
+    units?: number;
+  }[];
   totalAmount: number;
   paidAmount: number;
   remainingAmount: number;
-  payments: any[];
+  payments: Payment[];
   notificationsSent: {
     initial: boolean;
     reminder: boolean;
@@ -23,7 +31,7 @@ interface CreateBillData {
 }
 
 // Bills
-export const createBill = async (billData: CreateBillData, dormitoryId: string) => {
+export const createBill = async (dormitoryId: string, billData: CreateBillData): Promise<ApiResponse<Bill>> => {
   try {
     const billsRef = collection(db, 'dormitories', dormitoryId, 'bills');
     const docRef = await addDoc(billsRef, {
@@ -32,9 +40,29 @@ export const createBill = async (billData: CreateBillData, dormitoryId: string) 
       updatedAt: new Date()
     });
 
+    const bill: Bill = {
+      id: docRef.id,
+      dormitoryId: billData.dormitoryId,
+      roomNumber: billData.roomNumber,
+      tenantId: billData.tenantId,
+      tenantName: billData.tenantName,
+      month: billData.month,
+      year: billData.year,
+      dueDate: billData.dueDate,
+      status: billData.status,
+      items: billData.items,
+      totalAmount: billData.totalAmount,
+      paidAmount: billData.paidAmount,
+      remainingAmount: billData.remainingAmount,
+      payments: billData.payments,
+      notificationsSent: billData.notificationsSent,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
     return {
       success: true,
-      data: { id: docRef.id, ...billData }
+      data: bill
     };
   } catch (error) {
     console.error('Error creating bill:', error);

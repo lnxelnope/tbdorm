@@ -1,36 +1,36 @@
-import { Room, RoomType } from "@/types/dormitory";
-import { Tenant } from "@/types/tenant";
+import { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
 
-interface DormitoryConfig {
-  additionalFees: {
-    utilities: {
-      water: {
-        perPerson: number | null;
-      };
-      electric: {
-        unit: number | null;
-      };
-    };
-    items: Array<{
-      id: string;
-      amount: number;
-    }>;
-    floorRates: {
-      [key: string]: number | null;
-    };
+interface TotalPriceResult {
+  total: number;
+  breakdown: {
+    basePrice: number;
+    floorRate: number;
+    additionalServices: number;
+    water: number;
+    electricity: number;
   };
-  roomTypes: Record<string, RoomType>;
 }
 
 export const calculateTotalPrice = (
   room: Room, 
-  roomTypes: RoomType[], 
-  dormitoryConfig: DormitoryConfig,
-  tenant?: Tenant | null
-) => {
+  config: DormitoryConfig,
+  tenant?: {
+    id: string;
+    name: string;
+    roomNumber: string;
+    status: 'active' | 'moving_out' | 'moved_out';
+    numberOfResidents?: number;
+    electricityUsage?: {
+      unitsUsed: number;
+      previousReading?: number;
+      currentReading?: number;
+      charge?: number;
+    };
+  } | null
+): TotalPriceResult => {
   // หา roomType จาก config ของหอพัก
-  const roomTypeFromConfig = dormitoryConfig.roomTypes[room.roomType];
-  if (!roomTypeFromConfig) {
+  const roomType = config.roomTypes[room.roomType];
+  if (!roomType) {
     console.warn(`ไม่พบข้อมูลประเภทห้อง ${room.roomType} ในการตั้งค่าของหอพัก`);
     return {
       total: 0,
@@ -45,16 +45,16 @@ export const calculateTotalPrice = (
   }
   
   // คำนวณราคาพื้นฐานจาก config ของหอพัก
-  const basePrice = roomTypeFromConfig.basePrice;
+  const basePrice = roomType.basePrice;
 
   // คำนวณค่าส่วนเพิ่มตามชั้น
-  const floorRate = dormitoryConfig?.additionalFees?.floorRates?.[room.floor.toString()] || 0;
+  const floorRate = config?.additionalFees?.floorRates?.[room.floor.toString()] || 0;
 
   // คำนวณค่าบริการเพิ่มเติม
   let additionalServices = 0;
-  if (room.additionalServices?.length && dormitoryConfig?.additionalFees?.items?.length) {
+  if (room.additionalServices?.length && config?.additionalFees?.items?.length) {
     room.additionalServices.forEach(serviceId => {
-      const service = dormitoryConfig.additionalFees.items.find(item => item.id === serviceId);
+      const service = config.additionalFees.items.find(item => item.id === serviceId);
       if (service) {
         additionalServices += service.amount;
       }
@@ -63,14 +63,14 @@ export const calculateTotalPrice = (
 
   // คำนวณค่าน้ำ
   let water = 0;
-  if (tenant?.numberOfResidents && dormitoryConfig.additionalFees.utilities.water.perPerson) {
-    water = tenant.numberOfResidents * dormitoryConfig.additionalFees.utilities.water.perPerson;
+  if (tenant?.numberOfResidents && config.additionalFees.utilities.water.perPerson) {
+    water = tenant.numberOfResidents * config.additionalFees.utilities.water.perPerson;
   }
 
   // คำนวณค่าไฟ
   let electricity = 0;
-  if (tenant?.electricityUsage?.unitsUsed && dormitoryConfig.additionalFees.utilities.electric.unit) {
-    electricity = tenant.electricityUsage.unitsUsed * dormitoryConfig.additionalFees.utilities.electric.unit;
+  if (tenant?.electricityUsage?.unitsUsed && config.additionalFees.utilities.electric.unit) {
+    electricity = tenant.electricityUsage.unitsUsed * config.additionalFees.utilities.electric.unit;
   }
 
   return {

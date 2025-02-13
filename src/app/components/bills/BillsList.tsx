@@ -1,10 +1,28 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getActiveTenants } from '../../lib/firebase/firebaseUtils';
-import { getBillStatus } from '../../lib/bills/billUtils';
-import { useRouter } from 'next/router';
+import { getActiveTenants } from '@/lib/firebase/firebaseUtils';
+import { getBillStatus } from '@/lib/bills/billUtils';
+import { useRouter } from 'next/navigation';
 import { Zap } from 'lucide-react';
+import { Tenant, DormitoryConfig } from '@/types/dormitory';
+
+interface TenantWithBillStatus extends Tenant {
+  hasMeterReading?: boolean;
+  lastMeterReadingDate?: Date;
+  electricityUsage?: {
+    unitsUsed: number;
+    previousReading: number;
+    currentReading: number;
+    charge: number;
+  };
+  canCreateBill?: boolean;
+  statusMessage?: string;
+}
+
+interface BillsListProps {
+  config: DormitoryConfig;
+}
 
 export function BillsList({ config }: BillsListProps) {
   const [tenants, setTenants] = useState<TenantWithBillStatus[]>([]);

@@ -8,6 +8,15 @@ import { toast } from "sonner";
 import { getRoomTypes, updateRoom, getRooms } from "@/lib/firebase/firebaseUtils";
 import { Room, RoomType } from "@/types/dormitory";
 
+interface FormData {
+  number: string;
+  floor: number;
+  status: 'available' | 'occupied' | 'maintenance' | 'moving_out';
+  roomType: string;
+  initialMeterReading: number;
+  additionalServices: string[];
+}
+
 export default function EditRoomPage() {
   const params = useParams();
   const router = useRouter();
@@ -18,14 +27,13 @@ export default function EditRoomPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     number: "",
     floor: 1,
     roomType: "",
-    hasAirConditioner: false,
-    hasParking: false,
     status: "available" as Room["status"],
     initialMeterReading: 0,
+    additionalServices: [],
   });
 
   useEffect(() => {
@@ -45,10 +53,9 @@ export default function EditRoomPage() {
               number: foundRoom.number,
               floor: foundRoom.floor,
               roomType: foundRoom.roomType,
-              hasAirConditioner: foundRoom.hasAirConditioner,
-              hasParking: foundRoom.hasParking,
               status: foundRoom.status,
               initialMeterReading: foundRoom.initialMeterReading || 0,
+              additionalServices: foundRoom.additionalServices || [],
             });
           }
         }
@@ -223,35 +230,6 @@ export default function EditRoomPage() {
                 <option value="occupied">มีผู้เช่า</option>
                 <option value="maintenance">ปรับปรุง</option>
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.hasAirConditioner}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      hasAirConditioner: e.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-600">แอร์</span>
-              </label>
-
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.hasParking}
-                  onChange={(e) =>
-                    setFormData({ ...formData, hasParking: e.target.checked })
-                  }
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-600">ที่จอดรถ</span>
-              </label>
             </div>
 
             <div>

@@ -5,20 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { saveMeterReading } from "@/lib/firebase/firebaseUtils";
-import { Tenant, DormitoryConfig } from "@/types/dormitory";
-
-interface TenantWithBillStatus extends Tenant {
-  canCreateBill: boolean;
-  daysUntilDue: number;
-  hasMeterReading: boolean;
-  lastMeterReadingDate?: Date;
-  electricityUsage?: {
-    previousReading: number;
-    currentReading: number;
-    unitsUsed: number;
-    charge: number;
-  };
-}
+import { TenantWithBillStatus, DormitoryConfig } from "@/types/dormitory";
 
 interface UnrecordedMeterRoomProps {
   tenant: TenantWithBillStatus;
@@ -27,57 +14,53 @@ interface UnrecordedMeterRoomProps {
   onSuccess: () => void;
 }
 
-export default function UnrecordedMeterRoom({ 
-  tenant, 
-  selectedDormitory, 
-  config, 
-  onSuccess 
-}: UnrecordedMeterRoomProps) {
+export default function UnrecordedMeterRoom({ tenant, selectedDormitory, config, onSuccess }: UnrecordedMeterRoomProps) {
   const [currentReading, setCurrentReading] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
   const handleQuickMeterReading = async () => {
-    if (!currentReading || isNaN(Number(currentReading))) {
-      toast.error('กรุณากรอกค่ามิเตอร์ที่ถูกต้อง');
+    if (!currentReading) {
+      toast.error("กรุณากรอกค่ามิเตอร์");
       return;
     }
 
+    const reading = parseFloat(currentReading);
+    if (isNaN(reading)) {
+      toast.error("ค่ามิเตอร์ไม่ถูกต้อง");
+      return;
+    }
+
+    const previousReading = tenant.electricityUsage?.currentReading || 0;
+    if (reading < previousReading) {
+      toast.error("ค่ามิเตอร์ใหม่ต้องมากกว่าค่าเดิม");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      const previousReading = tenant.electricityUsage?.currentReading || 0;
-      const currentReadingNum = Number(currentReading);
-      
-      if (currentReadingNum < previousReading) {
-        toast.error('ค่ามิเตอร์ปัจจุบันต้องมากกว่าค่ามิเตอร์เดิม');
-        return;
-      }
-
-      const unitsUsed = currentReadingNum - previousReading;
-      
-      const meterData = {
+      const now = new Date().toISOString();
+      const result = await saveMeterReading(selectedDormitory, {
+        roomId: tenant.roomNumber,
         roomNumber: tenant.roomNumber,
-        roomId: tenant.roomId,
-        previousReading: previousReading,
-        currentReading: currentReadingNum,
-        unitsUsed: unitsUsed,
-        readingDate: new Date().toISOString(),
-        type: 'electric' as const
-      };
+        type: 'electric',
+        previousReading,
+        currentReading: reading,
+        unitsUsed: reading - previousReading,
+        readingDate: now
+      });
 
-      const result = await saveMeterReading(selectedDormitory, meterData);
       if (result.success) {
-        toast.success('บันทึกค่ามิเตอร์เรียบร้อย');
+        toast.success("บันทึกค่ามิเตอร์เรียบร้อย");
         onSuccess();
       } else {
-        throw new Error('ไม่สามารถบันทึกค่ามิเตอร์ได้');
+        toast.error(result.error?.toString() || "ไม่สามารถบันทึกค่ามิเตอร์ได้");
       }
     } catch (error) {
-      console.error('Error saving meter reading:', error);
-      toast.error('เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์');
+      console.error("Error saving meter reading:", error);
+      toast.error("เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์");
     } finally {
       setIsSubmitting(false);
-      setCurrentReading('');
     }
   };
 
@@ -98,21 +81,6 @@ export default function UnrecordedMeterRoom({
             <p className="text-sm text-gray-600">
               ค่ามิเตอร์เดิม: {tenant.electricityUsage?.currentReading || 0}
             </p>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">ข้อมูลติดต่อ</p>
-              <p className="text-sm">เลขบัตรประชาชน: {tenant.idCardNumber ? tenant.idCardNumber.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5') : '-'}</p>
-              <p className="text-sm">เบอร์โทร: {tenant.phone || '-'}</p>
-              <p className="text-sm">Line ID: {tenant.lineId || '-'}</p>
-              <p className="text-sm">อีเมล: {tenant.email || '-'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">ข้อมูลสัญญา</p>
-              <p className="text-sm">วันเข้าอยู่: {tenant.moveInDate ? new Date(tenant.moveInDate).toLocaleDateString('th-TH') : '-'}</p>
-              <p className="text-sm">สถานะ: {tenant.status === 'active' ? 'อยู่ประจำ' : 'กำลังย้ายออก'}</p>
-              <p className="text-sm">จำนวนผู้พักอาศัย: {tenant.numberOfOccupants || 1} คน</p>
-            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">

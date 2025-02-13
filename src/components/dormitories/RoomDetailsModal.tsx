@@ -1,29 +1,26 @@
 "use client";
 
+import React from 'react';
 import { useState, useEffect } from "react";
-import { Room, RoomType, Tenant } from "@/types/dormitory";
+import { Room, RoomType } from "@/types/dormitory";
+import { Tenant } from '@/types/tenant';
 import { getTenant, getLatestMeterReading } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
-import Modal from "@/components/ui/modal";
+import Modal from '@/components/ui/modal';
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { DormitoryConfig } from '@/types/dormitory';
 
 interface RoomDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   room: Room;
   roomType: RoomType;
-  dormitoryId: string;
+  tenant: Tenant | null;
+  dormitoryConfig: DormitoryConfig;
 }
 
-export default function RoomDetailsModal({
-  isOpen,
-  onClose,
-  room,
-  roomType,
-  dormitoryId,
-}: RoomDetailsModalProps) {
-  const [tenant, setTenant] = useState<Tenant | null>(null);
+export function RoomDetailsModal({ isOpen, onClose, room, roomType, tenant, dormitoryConfig }: RoomDetailsModalProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [currentElectricReading, setCurrentElectricReading] = useState<number | null>(null);
 
@@ -34,17 +31,6 @@ export default function RoomDetailsModal({
       try {
         setIsLoading(true);
         const promises = [];
-
-        // โหลดข้อมูลผู้เช่า
-        if (room.tenantId) {
-          promises.push(
-            getTenant(dormitoryId, room.tenantId).then((result) => {
-              if (result.success && result.data) {
-                setTenant(result.data);
-              }
-            })
-          );
-        }
 
         // โหลดข้อมูลค่าไฟล่าสุด
         promises.push(
@@ -65,7 +51,7 @@ export default function RoomDetailsModal({
     };
 
     loadData();
-  }, [isOpen, room.tenantId, dormitoryId, room.number]);
+  }, [isOpen, room.number]);
 
   const getStatusColor = (status: Room["status"]) => {
     switch (status) {
@@ -93,116 +79,83 @@ export default function RoomDetailsModal({
     }
   };
 
-  // คำนวณราคารวม
   const calculateTotalPrice = () => {
     let total = roomType.basePrice;
 
-    // บวกค่าแอร์
-    if (room.hasAirConditioner && roomType.airConditionerFee) {
-      total += roomType.airConditionerFee;
+    // คำนวณค่าห้องตามชั้น
+    const floorRate = dormitoryConfig?.additionalFees?.floorRates?.[room.floor.toString()];
+    if (floorRate) {
+      total += floorRate;
     }
 
-    // บวกค่าที่จอดรถ
-    if (room.hasParking && roomType.parkingFee) {
-      total += roomType.parkingFee;
+    // คำนวณค่าบริการเพิ่มเติม
+    const additionalFees = dormitoryConfig?.additionalFees?.items || [];
+    for (const fee of additionalFees) {
+      total += fee.amount;
     }
 
     return total;
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`ห้อง ${room.number}`}>
-      <div className="p-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* ข้อมูลห้อง */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">สถานะ</p>
-                  <Badge variant={getStatusColor(room.status)} className="mt-1">
-                    {getStatusText(room.status)}
-                  </Badge>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-500">ราคารวม</p>
-                  <p className="mt-1 text-lg font-semibold text-blue-600">
-                    {calculateTotalPrice().toLocaleString()} บาท/เดือน
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">ชั้น</p>
-                  <p className="mt-1">ชั้น {room.floor}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">ประเภทห้อง</p>
-                  <p className="mt-1">{roomType.name}</p>
-                </div>
+    <Modal isOpen={isOpen} onClose={onClose}>
+      <div className="p-6">
+        <h2 className="text-xl font-semibold mb-4">รายละเอียดห้องพัก {room.number}</h2>
+        
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-2">ข้อมูลห้องพัก</h3>
+            <div className="space-y-2">
+              <p>ชั้น: {room.floor}</p>
+              <p>รูปแบบห้อง: {roomType.name}</p>
+              {roomType.description && <p>รายละเอียด: {roomType.description}</p>}
+              
+              {roomType.facilities && roomType.facilities.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-gray-500">สิ่งอำนวยความสะดวก</p>
                   <div className="mt-1 space-y-1">
-                    {room.hasAirConditioner && (
-                      <p>• เครื่องปรับอากาศ (+{roomType.airConditionerFee?.toLocaleString() || 0} บาท)</p>
-                    )}
-                    {room.hasParking && (
-                      <p>• ที่จอดรถ (+{roomType.parkingFee?.toLocaleString() || 0} บาท)</p>
-                    )}
-                    {roomType.facilities?.map((facility) => (
+                    {roomType.facilities.map((facility) => (
                       <p key={facility}>• {facility}</p>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">ค่าไฟเดือนปัจจุบัน</p>
-                  <p className="mt-1">
-                    {currentElectricReading !== null
-                      ? `${currentElectricReading.toLocaleString()} หน่วย`
-                      : "-"}
-                  </p>
-                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <h3 className="text-lg font-semibold mb-2">ค่าใช้จ่ายรายเดือน</h3>
+            <div className="space-y-1">
+              <p>• ค่าห้องพื้นฐาน {roomType.basePrice.toLocaleString()} บาท</p>
+              {dormitoryConfig?.additionalFees?.floorRates?.[room.floor.toString()] && (
+                <p>• ค่าชั้น (+{dormitoryConfig.additionalFees.floorRates[room.floor.toString()]?.toLocaleString() || 0} บาท)</p>
+              )}
+              {dormitoryConfig?.additionalFees?.items.map((fee) => (
+                <p key={fee.id}>• {fee.name} (+{fee.amount.toLocaleString()} บาท)</p>
+              ))}
+              <p className="font-semibold mt-2">รวมทั้งหมด {calculateTotalPrice().toLocaleString()} บาท/เดือน</p>
+            </div>
+          </div>
+
+          {tenant && (
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold mb-2">ผู้เช่าปัจจุบัน</h3>
+              <div className="space-y-2">
+                <p>ชื่อ-นามสกุล: {tenant.name}</p>
+                <p>เบอร์โทร: {tenant.phone}</p>
+                <p>วันที่เข้าอยู่: {new Date(tenant.startDate).toLocaleDateString('th-TH')}</p>
+                {tenant.emergencyContact && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mt-2">ผู้ติดต่อฉุกเฉิน</p>
+                    <p>ชื่อ: {tenant.emergencyContact.name}</p>
+                    <p>ความสัมพันธ์: {tenant.emergencyContact.relationship}</p>
+                    <p>เบอร์โทร: {tenant.emergencyContact.phone}</p>
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* ข้อมูลผู้เช่า */}
-            {room.status === "occupied" && tenant && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-3">ข้อมูลผู้เช่า</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">ชื่อ-นามสกุล</p>
-                    <p className="mt-1">{`${tenant.firstName} ${tenant.lastName}`}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">เบอร์โทรศัพท์</p>
-                    <p className="mt-1">{tenant.phoneNumber}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">วันที่เข้าพัก</p>
-                    <p className="mt-1">
-                      {new Date(tenant.moveInDate).toLocaleDateString("th-TH")}
-                    </p>
-                  </div>
-                  {tenant.emergencyContact && (
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">ผู้ติดต่อฉุกเฉิน</p>
-                      <p className="mt-1">{tenant.emergencyContact.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {tenant.emergencyContact.phoneNumber}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </Modal>
   );

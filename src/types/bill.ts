@@ -15,20 +15,16 @@ export interface Bill {
   createdAt: Date;
   updatedAt: Date;
   payments: Payment[];
-  notificationsSent: {
-    initial: boolean;
-    reminder: boolean;
-    overdue: boolean;
-  };
+  notificationsSent: number;
 }
 
 export interface BillItem {
-  name: string;
   type: 'rent' | 'water' | 'electric' | 'other';
+  name: string;
   amount: number;
+  unit?: number;
+  rate?: number;
   description?: string;
-  unitPrice?: number;
-  units?: number;
 }
 
 export interface MeterReading {
@@ -81,13 +77,10 @@ export interface BankAccount {
 
 export interface Payment {
   id: string;
-  billId: string;
-  dormitoryId: string;
   amount: number;
   method: 'cash' | 'transfer' | 'promptpay';
   status: 'pending' | 'completed' | 'failed';
-  reference?: string;
-  evidence?: string;
+  receiptUrl?: string;
   paidAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -112,4 +105,4 @@ export interface BillSummary {
   pendingAmount: number;
   overdueBills: number;
   overdueAmount: number;
-} 
+}

@@ -5,6 +5,12 @@ import { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
 import { updateRoom, getRooms, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { toast } from "sonner";
 
+interface UpdateRoomResult {
+  success: boolean;
+  data?: Room;
+  error?: unknown;
+}
+
 interface EditRoomModalProps {
   room: Room;
   roomTypes: RoomType[];
@@ -101,13 +107,19 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
         updatedAt: new Date().toISOString(),
       };
 
-      const result = await updateRoom(dormitoryId, room.id, updatedRoom);
+      const result = await updateRoom(dormitoryId, room.id, updatedRoom) as UpdateRoomResult;
 
       if (result.success) {
+        if (result.data) {
+          onSuccess(result.data);
+        } else {
+          onSuccess(updatedRoom);
+        }
         toast.success("แก้ไขห้องพักเรียบร้อย");
-        onSuccess(updatedRoom);
+        onClose();
       } else {
-        toast.error("ไม่สามารถแก้ไขห้องพักได้");
+        const errorMessage = result.error?.toString() || "ไม่สามารถแก้ไขห้องพักได้";
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error updating room:", error);

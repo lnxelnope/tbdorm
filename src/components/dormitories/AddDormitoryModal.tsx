@@ -26,6 +26,24 @@ export default function AddDormitoryModal({
     paymentDueDay: 1,
   });
 
+  const initialConfig = {
+    roomTypes: {},
+    additionalFees: {
+      utilities: {
+        water: {
+          perPerson: null
+        },
+        electric: {
+          unit: null
+        }
+      },
+      items: [],
+      floorRates: {}
+    },
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -35,22 +53,7 @@ export default function AddDormitoryModal({
       const docRef = await addDoc(collection(db, 'dormitories'), {
         ...formData,
         status: 'active',
-        config: {
-          roomTypes: {},
-          additionalFees: {
-            airConditioner: null,
-            parking: null,
-            floorRates: {},
-            utilities: {
-              water: {
-                perPerson: formData.waterRate
-              },
-              electric: {
-                unit: formData.electricityRate
-              }
-            }
-          }
-        },
+        config: initialConfig,
         facilities: [],
         images: [],
         createdAt: serverTimestamp(),

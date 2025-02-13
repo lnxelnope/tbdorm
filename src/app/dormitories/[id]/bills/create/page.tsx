@@ -18,6 +18,15 @@ import {
 } from "@/lib/firebase/firebaseUtils";
 import { sendBillCreatedNotification } from "@/lib/notifications/lineNotify";
 
+interface BillItem {
+  type: 'rent' | 'water' | 'electric' | 'other';
+  name: string;
+  amount: number;
+  unit?: number;
+  rate?: number;
+  description?: string;
+}
+
 interface FormData {
   month: number;
   year: number;

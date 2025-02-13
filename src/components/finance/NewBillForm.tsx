@@ -8,6 +8,7 @@ import { addDoc, collection, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 import type { Dormitory } from "@/types/dormitory";
 import { Plus, Minus } from "lucide-react";
+import { calculateTotalPrice } from "@/app/dormitories/[id]/rooms/utils";
 
 interface NewBillFormProps {
   dormitories: Dormitory[];
@@ -46,7 +47,11 @@ export default function NewBillForm({ dormitories, onSuccess, onCancel }: NewBil
   };
 
   const calculateTotal = () => {
-    return items.reduce((sum, item) => sum + item.amount, 0);
+    const room = rooms[selectedRoom];
+    if (!room || !config?.roomTypes) return 0;
+    
+    const roomTypes = Object.values(config.roomTypes);
+    return calculateTotalPrice(room, roomTypes, config, tenant).total;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
