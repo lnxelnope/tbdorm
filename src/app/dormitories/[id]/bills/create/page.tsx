@@ -122,8 +122,8 @@ const handleSubmit = async (e: React.FormEvent) => {
       tenantId: tenant.id,
       month: formData.month,
       year: formData.year,
-      dueDate: new Date(formData.dueDate),
-        status: "pending" as const,
+      dueDate: new Date(formData.dueDate).toISOString(),
+      status: "pending" as const,
       items: formData.items,
       totalAmount,
       paidAmount: 0,
@@ -144,8 +144,8 @@ const handleSubmit = async (e: React.FormEvent) => {
         await sendBillCreatedNotification(lineConfig.data, {
           ...billData,
           id: result.id!,
-            createdAt: new Date(),
-            updatedAt: new Date(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         });
       }
 
