@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["https://tbdorm.vercel.app", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "https://*.vercel.app"],
+    "origin": ["https://tbdorm.vercel.app", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "https://*.vercel.app", "https://tbdorm-61zb53ooi-lnxelnopes-projects.vercel.app"],
     "method": ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
     "maxAgeSeconds": 3600,
     "allowedHeaders": [

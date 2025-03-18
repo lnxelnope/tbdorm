@@ -891,6 +891,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   const handleRentDetailsClick = (room: Room) => {
     setSelectedRoom(room);
     setShowRentDetailsModal(true);
+    // ปิด RoomDetailsModal ถ้ามีการเปิดอยู่
+    setShowRoomDetailsModal(false);
   };
 
   const handleTenantClick = (tenant: Tenant) => {

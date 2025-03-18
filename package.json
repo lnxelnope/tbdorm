@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.18.0",
+    "@babel/runtime": "^7.26.10",
     "@deepgram/sdk": "^3.10.0",
     "@google/generative-ai": "^0.21.0",
     "@headlessui/react": "^1.7.17",
