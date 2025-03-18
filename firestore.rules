@@ -7,25 +7,32 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    // กฎสำหรับ collection dormitories
-    match /dormitories/{dormitoryId} {
-      // อนุญาตให้อ่านข้อมูลได้ทุกคน
-      allow read: if true;
-      
-      // อนุญาตให้เขียนข้อมูลได้เฉพาะ user ที่ login แล้ว
-      allow write: if isAuthenticated();
-      
-      // กฎสำหรับ subcollections
-      match /{document=**} {
-        allow read: if true;
-        allow write: if isAuthenticated();
-      }
+    // กฎสำหรับทุก collection ในระหว่างการพัฒนา
+    match /{document=**} {
+      // อนุญาตให้อ่านและเขียนข้อมูลได้ทุกคนในระหว่างการพัฒนา
+      allow read, write: if true;
     }
     
-    // กฎสำหรับ collection users
-    match /users/{userId} {
-      // อนุญาตให้อ่านและเขียนข้อมูลได้เฉพาะเจ้าของข้อมูล
-      allow read, write: if request.auth.uid == userId;
-    }
+    // กฎเดิมที่จะใช้ในอนาคต (ปิดไว้ชั่วคราว)
+    // กฎสำหรับ collection dormitories
+    // match /dormitories/{dormitoryId} {
+    //   // อนุญาตให้อ่านข้อมูลได้ทุกคน
+    //   allow read: if true;
+    //   
+    //   // อนุญาตให้เขียนข้อมูลได้เฉพาะ user ที่ login แล้ว
+    //   allow write: if isAuthenticated();
+    //   
+    //   // กฎสำหรับ subcollections
+    //   match /{document=**} {
+    //     allow read: if true;
+    //     allow write: if isAuthenticated();
+    //   }
+    // }
+    // 
+    // // กฎสำหรับ collection users
+    // match /users/{userId} {
+    //   // อนุญาตให้อ่านและเขียนข้อมูลได้เฉพาะเจ้าของข้อมูล
+    //   allow read, write: if request.auth.uid == userId;
+    // }
   }
 } 

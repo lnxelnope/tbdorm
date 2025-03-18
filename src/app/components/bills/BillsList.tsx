@@ -5,7 +5,8 @@ import { getActiveTenants } from '@/lib/firebase/firebaseUtils';
 import { getBillStatus } from '@/lib/bills/billUtils';
 import { useRouter } from 'next/navigation';
 import { Zap } from 'lucide-react';
-import { Tenant, DormitoryConfig } from '@/types/dormitory';
+import { DormitoryConfig } from '@/types/dormitory';
+import { Tenant } from '@/types/tenant';
 
 interface TenantWithBillStatus extends Tenant {
   hasMeterReading?: boolean;

@@ -127,7 +127,9 @@ export default function PaymentPage({
         }
 
         toast.success("บันทึกการชำระเงินเรียบร้อย");
-        router.push(`/dormitories/${params.id}/bills/${params.billId}`);
+        
+        // รีเฟรชข้อมูลบิลก่อนกลับไปหน้ารายละเอียดบิล
+        router.push(`/dormitories/${params.id}/bills/${params.billId}?refresh=${Date.now()}`);
       }
     } catch (error) {
       console.error("Error adding payment:", error);

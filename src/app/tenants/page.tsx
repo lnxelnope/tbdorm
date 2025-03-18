@@ -1,62 +1,107 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Plus, Search, Filter, Download, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Search, Filter, Download, Trash2, UserPlus, Edit, Eye, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { queryDormitories, queryTenants, deleteTenant } from "@/lib/firebase/firebaseUtils";
-import type { Dormitory, Tenant, DormitoryConfig, RoomType } from "@/types/dormitory";
-import TenantList from "@/components/tenants/TenantList";
+import { 
+  queryDormitories, 
+  queryTenants, 
+  deleteTenant, 
+  getDormitoryConfig 
+} from "@/lib/firebase/firebaseUtils";
+import type { Dormitory } from "@/types/dormitory";
+import type { Tenant } from "@/types/tenant";
 import AddTenantModal from "@/components/tenants/AddTenantModal";
-import DeleteTenantModal from "@/components/tenants/DeleteTenantModal";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import EditTenantModal from "@/components/tenants/EditTenantModal";
 import TenantDetailsModal from "@/app/components/tenants/TenantDetailsModal";
 
-interface DormitoryData extends Omit<Dormitory, 'createdAt' | 'updatedAt'> {
-  createdAt: string;
-  updatedAt: string;
+// ประเภทข้อมูลสำหรับการจัดเรียง
+interface SortConfig {
+  key: string;
+  direction: 'asc' | 'desc';
 }
 
-interface TenantData extends Omit<Tenant, 'startDate' | 'endDate' | 'createdAt' | 'updatedAt' | 'emergencyContact'> {
-  startDate: string;
-  endDate?: string;
-  createdAt: string;
-  updatedAt: string;
-  emergencyContact: {
-    name: string;
-    relationship: string;
-    phone: string;
-  };
-  currentRent?: number;
+// คอมโพเนนต์ Modal ยืนยันการลบ
+interface DeleteConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+}
+
+function DeleteConfirmModal({ isOpen, onClose, onConfirm, title, message }: DeleteConfirmModalProps) {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+      <div className="relative bg-white rounded-lg p-6 w-full max-w-md mx-auto shadow-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <button 
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mb-6">
+          <p className="text-gray-600">{message}</p>
+        </div>
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 rounded-md text-sm font-medium text-white hover:bg-red-700"
+          >
+            ยืนยัน
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function TenantsPage() {
+  // สถานะการโหลดข้อมูล
   const [isLoading, setIsLoading] = useState(true);
-  const [dormitories, setDormitories] = useState<DormitoryData[]>([]);
-  const [tenants, setTenants] = useState<TenantData[]>([]);
-  const [selectedDormitory, setSelectedDormitory] = useState("");
+  
+  // ข้อมูลหอพักและผู้เช่า
+  const [dormitories, setDormitories] = useState<Dormitory[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [selectedDormitory, setSelectedDormitory] = useState<string>("");
+  
+  // สถานะการค้นหาและการจัดเรียง
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedTenant, setSelectedTenant] = useState<TenantData | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({
+  const [sortConfig, setSortConfig] = useState<SortConfig>({
     key: 'roomNumber',
     direction: 'asc'
   });
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  
+  // สถานะสำหรับ Modal ต่างๆ
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
 
+  // โหลดข้อมูลหอพัก
   const loadDormitories = async () => {
     try {
       const result = await queryDormitories();
       if (result.success && result.data) {
-        const dormitoriesWithTotalFloors = result.data.map((dorm: Dormitory) => ({
-          ...dorm,
-          totalFloors: dorm.config?.additionalFees?.floorRates ? 
-            Object.keys(dorm.config.additionalFees.floorRates).length : 
-            1
-        }));
-        setDormitories(dormitoriesWithTotalFloors);
+        setDormitories(result.data);
+        
+        // เลือกหอพักแรกโดยอัตโนมัติถ้ายังไม่ได้เลือก
+        if (result.data.length > 0 && !selectedDormitory) {
+          setSelectedDormitory(result.data[0].id);
+        }
       }
     } catch (error) {
       console.error("Error loading dormitories:", error);
@@ -64,153 +109,197 @@ export default function TenantsPage() {
     }
   };
 
+  // โหลดข้อมูลผู้เช่า
   const loadTenants = async () => {
+    if (!selectedDormitory) return;
+    
     try {
+      setIsLoading(true);
+      
+      // ดึงข้อมูลผู้เช่า
       const result = await queryTenants(selectedDormitory);
-      if (result.success && result.data) {
-        const tenantsData = result.data.map(tenant => {
-          const data: TenantData = {
-            id: tenant.id,
-            name: tenant.name,
-            lineId: tenant.lineId || "",
-            idCard: tenant.idCard || "",
-            phone: tenant.phone || "",
-            email: tenant.email || "",
-            currentAddress: tenant.currentAddress || "",
-            workplace: tenant.workplace || "",
-            dormitoryId: tenant.dormitoryId || "",
-            roomId: tenant.roomId || "",
-            roomNumber: tenant.roomNumber || "",
-            deposit: tenant.deposit || 0,
-            startDate: tenant.startDate?.toString() || new Date().toISOString(),
-            endDate: tenant.endDate?.toString(),
-            status: tenant.status || "active",
-            createdAt: tenant.createdAt?.toString() || new Date().toISOString(),
-            updatedAt: tenant.updatedAt?.toString() || new Date().toISOString(),
-            numberOfResidents: tenant.numberOfResidents || 1,
-            numberOfOccupants: tenant.numberOfResidents || 1,
-            rentAdvance: tenant.rentAdvance || 0,
-            emergencyContact: typeof tenant.emergencyContact === 'string' 
-              ? { name: "", relationship: "", phone: tenant.emergencyContact }
-              : tenant.emergencyContact || { name: "", relationship: "", phone: "" },
-            outstandingBalance: tenant.outstandingBalance || 0
-          };
-          return data;
-        });
-        setTenants(tenantsData);
+      if (!result.success || !result.data) {
+        toast.error("ไม่สามารถโหลดข้อมูลผู้เช่าได้");
+        setIsLoading(false);
+        return;
       }
+      
+      // ดึงการตั้งค่าหอพัก
+      const configResult = await getDormitoryConfig();
+      
+      // กรองเฉพาะผู้เช่าที่ยังอยู่ในหอพัก
+      const activeTenants = result.data.filter(
+        tenant => tenant.status === 'active' || tenant.status === 'moving_out'
+      );
+      
+      // จัดรูปแบบข้อมูลผู้เช่า
+      const formattedTenants = activeTenants.map(tenant => {
+        // คำนวณชั้นจากเลขห้อง
+        const floor = parseInt(tenant.roomNumber.charAt(0));
+        
+        return {
+          ...tenant,
+          floor,
+          // ตั้งค่าเริ่มต้นสำหรับข้อมูลที่อาจไม่มี
+          numberOfResidents: tenant.numberOfResidents || 1,
+          hasMeterReading: tenant.hasMeterReading || false,
+          electricityUsage: tenant.electricityUsage || {
+            unitsUsed: 0,
+            previousReading: 0,
+            currentReading: 0,
+            charge: 0
+          }
+        };
+      });
+      
+      setTenants(formattedTenants);
     } catch (error) {
       console.error("Error loading tenants:", error);
-      toast.error("Failed to load tenants");
+      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้เช่า");
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // โหลดข้อมูลเมื่อเริ่มต้น
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      await Promise.all([loadDormitories(), loadTenants()]);
-      setIsLoading(false);
-    };
-    loadData();
+    loadDormitories();
+  }, []);
+
+  // โหลดข้อมูลผู้เช่าเมื่อเลือกหอพัก
+  useEffect(() => {
+    if (selectedDormitory) {
+      loadTenants();
+    }
   }, [selectedDormitory]);
 
-  const handleEdit = (tenant: TenantData) => {
-    setSelectedTenant(tenant);
-    setIsEditModalOpen(true);
+  // จัดการการเปลี่ยนหอพัก
+  const handleDormitoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedDormitory(e.target.value);
   };
 
-  const handleDelete = (tenant: TenantData) => {
-    setSelectedTenant(tenant);
-    setIsDeleteModalOpen(true);
-  };
-
+  // จัดการการจัดเรียง
   const handleSort = (key: string) => {
-    setSortConfig(prev => ({
+    setSortConfig(current => ({
       key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
     }));
   };
 
-  const sortData = (data: TenantData[]) => {
-    return [...data].sort((a, b) => {
+  // กรองและจัดเรียงข้อมูลผู้เช่า
+  const filteredAndSortedTenants = useMemo(() => {
+    // กรองตามคำค้นหา
+    const filtered = tenants.filter(tenant => {
+      const searchLower = searchQuery.toLowerCase();
+      return (
+        tenant.name.toLowerCase().includes(searchLower) ||
+        tenant.roomNumber.toLowerCase().includes(searchLower) ||
+        tenant.phone?.toLowerCase().includes(searchLower) ||
+        tenant.email?.toLowerCase().includes(searchLower)
+      );
+    });
+
+    // จัดเรียงตามคอลัมน์ที่เลือก
+    return [...filtered].sort((a, b) => {
       const direction = sortConfig.direction === 'asc' ? 1 : -1;
       
       switch (sortConfig.key) {
         case 'roomNumber':
-          return direction * a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true });
-        case 'currentRent':
-          return direction * ((a.currentRent || 0) - (b.currentRent || 0));
-        case 'outstandingBalance':
-          return direction * (a.outstandingBalance - b.outstandingBalance);
+          return a.roomNumber.localeCompare(b.roomNumber) * direction;
+        case 'name':
+          return a.name.localeCompare(b.name) * direction;
+        case 'phone':
+          return (a.phone || '').localeCompare(b.phone || '') * direction;
+        case 'status':
+          return a.status.localeCompare(b.status) * direction;
         default:
           return 0;
       }
     });
+  }, [tenants, searchQuery, sortConfig]);
+
+  // จัดการการเพิ่มผู้เช่า
+  const handleAddTenant = () => {
+    setIsAddModalOpen(true);
   };
 
-  const handleTenantClick = (tenantId: string) => {
-    setSelectedTenantId(tenantId);
+  // จัดการการแก้ไขผู้เช่า
+  const handleEditTenant = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setIsEditModalOpen(true);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-          <p className="mt-2 text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
-        </div>
-      </div>
-    );
-  }
+  // จัดการการลบผู้เช่า
+  const handleDeleteTenant = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setIsDeleteModalOpen(true);
+  };
+
+  // จัดการการดูรายละเอียดผู้เช่า
+  const handleViewTenantDetails = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setIsDetailsModalOpen(true);
+  };
+
+  // จัดการการลบผู้เช่าเมื่อยืนยัน
+  const confirmDeleteTenant = async () => {
+    if (!selectedTenant || !selectedDormitory) return;
+    
+    try {
+      const result = await deleteTenant(selectedDormitory, selectedTenant.id);
+      if (result.success) {
+        toast.success("ลบผู้เช่าเรียบร้อยแล้ว");
+        loadTenants(); // โหลดข้อมูลใหม่
+      } else {
+        toast.error("ไม่สามารถลบผู้เช่าได้");
+      }
+    } catch (error) {
+      console.error("Error deleting tenant:", error);
+      toast.error("เกิดข้อผิดพลาดในการลบผู้เช่า");
+    } finally {
+      setIsDeleteModalOpen(false);
+      setSelectedTenant(null);
+    }
+  };
+
+  // จัดการเมื่อเพิ่มหรือแก้ไขผู้เช่าสำเร็จ
+  const handleSuccess = () => {
+    loadTenants();
+    setIsAddModalOpen(false);
+    setIsEditModalOpen(false);
+    setSelectedTenant(null);
+  };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">รายชื่อผู้เช่า</h1>
-          <p className="mt-1 text-sm text-gray-500">จัดการข้อมูลผู้เช่าทั้งหมด</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsAddModalOpen(true)}
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          เพิ่มผู้เช่า
-        </button>
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex flex-col gap-2 mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900">จัดการผู้เช่า</h1>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>ตารางรายชื่อผู้เช่า</CardTitle>
-              <CardDescription>แสดงข้อมูลผู้เช่าทั้งหมด</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+      <div className="bg-white shadow-sm rounded-lg overflow-hidden mb-6">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between">
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
+              <div>
                 <label htmlFor="dormitory" className="block text-sm font-medium text-gray-700 mb-1">
                   หอพัก
                 </label>
                 <select
                   id="dormitory"
                   value={selectedDormitory}
-                  onChange={(e) => setSelectedDormitory(e.target.value)}
+                  onChange={handleDormitoryChange}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                 >
-                  <option value="">ทั้งหมด</option>
-                  {dormitories.map((dormitory) => (
-                    <option key={dormitory.id} value={dormitory.id}>
-                      {dormitory.name}
+                  <option value="">เลือกหอพัก</option>
+                  {dormitories.map((dorm) => (
+                    <option key={dorm.id} value={dorm.id}>
+                      {dorm.name}
                     </option>
                   ))}
                 </select>
               </div>
-              <div className="flex-1">
+
+              <div>
                 <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
                   ค้นหา
                 </label>
@@ -230,171 +319,200 @@ export default function TenantsPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('roomNumber')}>
-                      เลขห้อง
-                      {sortConfig.key === 'roomNumber' && (
-                        <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ชื่อ-นามสกุล
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      จำนวนผู้พักอาศัย
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('currentRent')}>
-                      ค่าเช่าเดือนนี้
-                      {sortConfig.key === 'currentRent' && (
-                        <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('outstandingBalance')}>
-                      ค่าเช่าค้างจ่าย
-                      {sortConfig.key === 'outstandingBalance' && (
-                        <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      สถานะ
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      จัดการ
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {tenants.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                        ไม่พบข้อมูล
-                      </td>
-                    </tr>
-                  ) : (
-                    sortData(tenants
-                      .filter(tenant => {
-                        if (!searchQuery) return true;
-                        const searchLower = searchQuery.toLowerCase();
-                        return (
-                          tenant.name?.toLowerCase().includes(searchLower) ||
-                          tenant.roomNumber?.toLowerCase().includes(searchLower)
-                        );
-                      }))
-                      .map((tenant) => (
-                        <tr key={tenant.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {tenant.roomNumber.padStart(3, '0')}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <button
-                              onClick={() => handleTenantClick(tenant.id)}
-                              className="text-blue-600 hover:text-blue-900 hover:underline"
-                            >
-                              {tenant.name}
-                            </button>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {tenant.numberOfOccupants || 1} คน
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {(tenant.currentRent || 0).toLocaleString()} บาท
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {tenant.outstandingBalance.toLocaleString()} บาท
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                              tenant.status === 'active' 
-                                ? 'bg-green-100 text-green-800'
-                                : tenant.status === 'moving_out'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-red-100 text-red-800'
-                            }`}>
-                              {tenant.status === 'active' ? 'อยู่ประจำ' : tenant.status === 'moving_out' ? 'กำลังย้ายออก' : 'ออกจากหอพัก'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => handleEdit(tenant)}
-                                className="text-blue-600 hover:text-blue-900"
-                              >
-                                แก้ไข
-                              </button>
-                              <button
-                                onClick={() => handleDelete(tenant)}
-                                className="text-red-600 hover:text-red-900"
-                              >
-                                ลบ
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
+            <div className="flex items-end">
+              <button
+                onClick={handleAddTenant}
+                disabled={!selectedDormitory}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                เพิ่มผู้เช่า
+              </button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <AddTenantModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        dormitories={dormitories}
-        onSuccess={() => {
-          setIsAddModalOpen(false);
-          loadTenants();
-        }}
-      />
+        <div className="overflow-x-auto">
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
+          ) : filteredAndSortedTenants.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">ไม่พบข้อมูลผู้เช่า</p>
+            </div>
+          ) : (
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th 
+                    scope="col" 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('roomNumber')}
+                  >
+                    เลขห้อง
+                    {sortConfig.key === 'roomNumber' && (
+                      <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('name')}
+                  >
+                    ชื่อ-นามสกุล
+                    {sortConfig.key === 'name' && (
+                      <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('phone')}
+                  >
+                    เบอร์โทรศัพท์
+                    {sortConfig.key === 'phone' && (
+                      <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    จำนวนผู้พักอาศัย
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('status')}
+                  >
+                    สถานะ
+                    {sortConfig.key === 'status' && (
+                      <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    จัดการ
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedTenants.map((tenant) => (
+                  <tr key={tenant.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {tenant.roomNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => handleViewTenantDetails(tenant)}
+                        className="text-blue-600 hover:text-blue-900 hover:underline"
+                      >
+                        {tenant.name}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {tenant.phone || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {tenant.numberOfResidents || 1} คน
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          tenant.status === "active"
+                            ? "bg-green-100 text-green-800"
+                            : tenant.status === "moving_out"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {tenant.status === "active"
+                          ? "อยู่ประจำ"
+                          : tenant.status === "moving_out"
+                          ? "กำลังย้ายออก"
+                          : "ย้ายออกแล้ว"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex justify-end space-x-2">
+                        <button
+                          onClick={() => handleViewTenantDetails(tenant)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="ดูรายละเอียด"
+                        >
+                          <Eye className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleEditTenant(tenant)}
+                          className="text-yellow-600 hover:text-yellow-900"
+                          title="แก้ไข"
+                        >
+                          <Edit className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTenant(tenant)}
+                          className="text-red-600 hover:text-red-900"
+                          title="ลบ"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
 
-      {selectedTenant && (
+      {/* Modal เพิ่มผู้เช่า */}
+      {isAddModalOpen && (
+        <AddTenantModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          dormitories={dormitories}
+          onSuccess={handleSuccess}
+        />
+      )}
+
+      {/* Modal แก้ไขผู้เช่า */}
+      {isEditModalOpen && selectedTenant && (
         <EditTenantModal
           isOpen={isEditModalOpen}
-          tenant={selectedTenant}
           onClose={() => {
-            setSelectedTenant(null);
             setIsEditModalOpen(false);
-          }}
-          onSuccess={() => {
             setSelectedTenant(null);
-            setIsEditModalOpen(false);
-            loadTenants();
           }}
+          tenant={selectedTenant}
           dormitories={dormitories}
+          onSuccess={handleSuccess}
         />
       )}
 
-      {selectedTenantId && (
+      {/* Modal ยืนยันการลบผู้เช่า */}
+      {isDeleteModalOpen && selectedTenant && (
+        <DeleteConfirmModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setSelectedTenant(null);
+          }}
+          onConfirm={confirmDeleteTenant}
+          title="ยืนยันการลบผู้เช่า"
+          message={`คุณแน่ใจหรือไม่ที่จะลบผู้เช่า "${selectedTenant.name}" ออกจากระบบ?`}
+        />
+      )}
+
+      {/* Modal แสดงรายละเอียดผู้เช่า */}
+      {isDetailsModalOpen && selectedTenant && (
         <TenantDetailsModal
-          isOpen={!!selectedTenantId}
-          onClose={() => setSelectedTenantId(null)}
-          dormitoryId={dormitories.find(d => d.id === selectedTenantId)?.id || ""}
-          tenantId={selectedTenantId}
+          isOpen={isDetailsModalOpen}
+          onClose={() => {
+            setIsDetailsModalOpen(false);
+            setSelectedTenant(null);
+          }}
+          tenantId={selectedTenant.id}
+          dormitoryId={selectedDormitory}
         />
       )}
-
-      <DeleteTenantModal
-        isOpen={isDeleteModalOpen}
-        tenant={selectedTenant}
-        onClose={() => {
-          setIsDeleteModalOpen(false);
-          setSelectedTenant(null);
-        }}
-        onSuccess={() => {
-          setIsDeleteModalOpen(false);
-          setSelectedTenant(null);
-          loadTenants();
-          toast.success("ลบผู้เช่าเรียบร้อยแล้ว");
-        }}
-      />
     </div>
   );
 } 

@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ArrowLeft, Printer, Receipt } from "lucide-react";
+import { ArrowLeft, Printer, Receipt, FileDown } from "lucide-react";
 import Link from "next/link";
-import { Bill, Payment, Tenant } from "@/types/dormitory";
-import { getBills, getPayments, queryTenants } from "@/lib/firebase/firebaseUtils";
+import { Bill } from "@/types/dormitory";
+import { Payment } from "@/types/bill";
+import { Tenant } from "@/types/tenant";
+import { getPayments, queryTenants, getDormitory } from "@/lib/firebase/firebaseUtils";
+import { getBill, getBillPayments } from "@/lib/firebase/billUtils";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useSearchParams } from "next/navigation";
 
 export default function BillDetailsPage({
   params,
@@ -15,35 +20,94 @@ export default function BillDetailsPage({
   const [isLoading, setIsLoading] = useState(true);
   const [bill, setBill] = useState<Bill | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [dormitoryName, setDormitoryName] = useState("");
+  const [jsPDF, setJsPDF] = useState<any>(null);
+  const [html2canvas, setHtml2canvas] = useState<any>(null);
+  const searchParams = useSearchParams();
+  const refreshParam = searchParams.get('refresh');
+
+  // โหลดไลบรารีเมื่อ component mount
+  useEffect(() => {
+    const loadLibraries = async () => {
+      try {
+        const jspdfModule = await import('jspdf');
+        const html2canvasModule = await import('html2canvas');
+        setJsPDF(() => jspdfModule.default);
+        setHtml2canvas(() => html2canvasModule.default);
+      } catch (error) {
+        console.error('Error loading PDF libraries:', error);
+      }
+    };
+    
+    loadLibraries();
+  }, []);
 
   const loadBillDetails = useCallback(async () => {
     try {
       setIsLoading(true);
-      const result = await getBills(params.id);
-      if (result.success && result.data) {
-        const foundBill = result.data.find((b) => b.id === params.billId);
-        if (foundBill) {
-          setBill(foundBill);
-
-          // โหลดข้อมูลผู้เช่า
-          const tenantsResult = await queryTenants(params.id);
-          if (tenantsResult.success && tenantsResult.data) {
-            const foundTenant = tenantsResult.data.find(
-              (t) => t.id === foundBill.tenantId
-            );
-            if (foundTenant) {
-              setTenant(foundTenant);
-            }
+      
+      // ใช้ getBill แทน getBills เพื่อดึงข้อมูลบิลล่าสุดโดยตรง
+      const billResult = await getBill(params.id, params.billId);
+      
+      if (billResult.success && billResult.data) {
+        const foundBill = billResult.data;
+        
+        // โหลดข้อมูลผู้เช่า
+        const tenantsResult = await queryTenants(params.id);
+        if (tenantsResult.success && tenantsResult.data) {
+          const foundTenant = tenantsResult.data.find(
+            (t) => t.id === foundBill.tenantId
+          );
+          if (foundTenant) {
+            setTenant(foundTenant);
           }
+        }
+        
+        // โหลดข้อมูลหอพัก
+        const dormResult = await getDormitory(params.id);
+        if (dormResult.success && dormResult.data) {
+          setDormitoryName(dormResult.data.name);
+        }
+        
+        // โหลดข้อมูลการชำระเงินล่าสุด
+        try {
+          const paymentsResult = await getBillPayments(params.id, foundBill.id);
+          if (paymentsResult.success && paymentsResult.data) {
+            // กรองข้อมูลการชำระเงินที่ซ้ำกันโดยใช้ ID
+            const uniquePayments = paymentsResult.data.filter((payment, index, self) => 
+              index === self.findIndex(p => p.id === payment.id)
+            );
+            
+            // คำนวณยอดชำระเงินทั้งหมดจากข้อมูลการชำระเงินล่าสุด
+            const totalPaid = uniquePayments.reduce((sum: number, payment) => {
+              return sum + Number(payment.amount);
+            }, 0);
+            
+            // คำนวณยอดคงเหลือใหม่
+            const remainingAmount = Number(foundBill.totalAmount) - totalPaid;
+            
+            // อัปเดตข้อมูลบิลด้วยข้อมูลการชำระเงินล่าสุดและยอดคงเหลือที่คำนวณใหม่
+            setBill({
+              ...foundBill,
+              payments: uniquePayments,
+              paidAmount: totalPaid,
+              remainingAmount: remainingAmount
+            } as unknown as Bill);
+          } else {
+            setBill(foundBill);
+          }
+        } catch (paymentError) {
+          console.error("Error loading payments:", paymentError);
+          setBill(foundBill);
         }
       }
     } catch (error) {
       console.error("Error loading bill details:", error);
-      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+      toast.error("ไม่สามารถโหลดข้อมูลบิลได้");
     } finally {
       setIsLoading(false);
     }
-  }, [params.id, params.billId]);
+  }, [params.id, params.billId, refreshParam]);
 
   useEffect(() => {
     loadBillDetails();
@@ -92,6 +156,42 @@ export default function BillDetailsPage({
     }
   };
 
+  // ฟังก์ชันสำหรับการสร้าง PDF
+  const handleGeneratePDF = async () => {
+    if (!bill) return;
+    
+    if (!jsPDF || !html2canvas) {
+      toast.error("กำลังโหลดไลบรารี โปรดลองอีกครั้งในอีกสักครู่");
+      return;
+    }
+
+    try {
+      toast.info("กำลังสร้างไฟล์ PDF โปรดรอสักครู่...");
+      
+      // สร้าง PDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // ใช้ element ที่มีอยู่แล้วในหน้า
+      const element = document.getElementById('bill-printable');
+      if (element) {
+        const canvas = await html2canvas(element);
+        const imgData = canvas.toDataURL('image/png');
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297 * canvas.height / canvas.width);
+        
+        // บันทึก PDF
+        pdf.save(`บิล_${bill.roomId}_${bill.month}_${bill.year}.pdf`);
+        
+        toast.success("สร้างไฟล์ PDF เรียบร้อยแล้ว");
+      } else {
+        toast.error("ไม่พบข้อมูลบิลสำหรับสร้าง PDF");
+      }
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast.error("เกิดข้อผิดพลาดในการสร้างไฟล์ PDF");
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -123,13 +223,22 @@ export default function BillDetailsPage({
           </h1>
         </div>
         <div className="flex gap-2">
-          <button
+          <Button
+            variant="outline"
             onClick={() => window.print()}
             className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <Printer className="w-4 h-4 mr-2" />
             พิมพ์
-          </button>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleGeneratePDF}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <FileDown className="w-4 h-4 mr-2" />
+            สร้าง PDF
+          </Button>
           <Link
             href={`/dormitories/${params.id}/bills/${params.billId}/payment`}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -140,134 +249,148 @@ export default function BillDetailsPage({
         </div>
       </div>
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h2 className="text-lg font-medium text-gray-900">ข้อมูลบิล</h2>
-              <dl className="mt-4 space-y-2">
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">เลขที่บิล</dt>
-                  <dd className="text-sm text-gray-900">{bill.id}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">ห้อง</dt>
-                  <dd className="text-sm text-gray-900">ห้อง {bill.roomId}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">
-                    ประจำเดือน
-                  </dt>
-                  <dd className="text-sm text-gray-900">
-                    {new Date(bill.year, bill.month - 1).toLocaleString("th-TH", {
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">
-                    กำหนดชำระ
-                  </dt>
-                  <dd className="text-sm text-gray-900">
-                    {new Date(bill.dueDate).toLocaleDateString("th-TH")}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">สถานะ</dt>
-                  <dd className="text-sm">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(
-                        bill.status
-                      )}`}
-                    >
-                      {getStatusText(bill.status)}
-                    </span>
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div>
-              <h2 className="text-lg font-medium text-gray-900">ข้อมูลผู้เช่า</h2>
-              <dl className="mt-4 space-y-2">
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">ชื่อ-สกุล</dt>
-                  <dd className="text-sm text-gray-900">{tenant?.name || "-"}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">
-                    เบอร์โทรศัพท์
-                  </dt>
-                  <dd className="text-sm text-gray-900">{tenant?.phone || "-"}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm font-medium text-gray-500">Line ID</dt>
-                  <dd className="text-sm text-gray-900">
-                    {tenant?.lineId || "-"}
-                  </dd>
-                </div>
-              </dl>
-            </div>
+      {/* เพิ่ม style สำหรับการพิมพ์ */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #bill-printable, #bill-printable * {
+            visibility: visible;
+          }
+          #bill-printable {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      {/* ส่วนที่จะพิมพ์ */}
+      <div id="bill-printable" className="bg-white shadow rounded-lg overflow-hidden p-6">
+        <div className="flex justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold">ใบแจ้งค่าเช่า</h2>
+            <p className="text-gray-600">หอพัก: {dormitoryName}</p>
+          </div>
+          <div className="text-right">
+            <p className="font-medium">เลขที่: {bill.id}</p>
+            <p className="font-medium">วันที่: {new Date(bill.createdAt).toLocaleDateString('th-TH')}</p>
+            <p className="font-medium">กำหนดชำระ: {new Date(bill.dueDate).toLocaleDateString('th-TH')}</p>
           </div>
         </div>
 
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                รายการ
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                จำนวน
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                หน่วยละ
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                จำนวนเงิน
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {bill.items.map((item, index) => (
-              <tr key={index}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {item.description}
-                  {item.utilityReading && (
-                    <div className="text-xs text-gray-500">
-                      เลขมิเตอร์: {item.utilityReading.previousReading} -{" "}
-                      {item.utilityReading.currentReading} ({item.utilityReading.unitsUsed}{" "}
-                      หน่วย)
-                    </div>
-                  )}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-medium mb-2">ข้อมูลผู้เช่า</h3>
+            <p>ชื่อผู้เช่า: {tenant?.name || "-"}</p>
+            <p>ห้อง: {bill.roomId}</p>
+            <p>โทร: {tenant?.phone || "-"}</p>
+          </div>
+          <div>
+            <h3 className="text-lg font-medium mb-2">ข้อมูลบิล</h3>
+            <p>ประจำเดือน: {new Date(bill.year, bill.month - 1).toLocaleString("th-TH", {
+              month: "long",
+              year: "numeric",
+            })}</p>
+            <p>สถานะ: <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(bill.status)}`}>
+              {getStatusText(bill.status)}
+            </span></p>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-medium mb-2">รายละเอียดค่าใช้จ่าย</h3>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  รายการ
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  จำนวน
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  หน่วยละ
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  จำนวนเงิน
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {bill.items.map((item, index) => (
+                <tr key={index}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.description}
+                    {item.utilityReading && (
+                      <div className="text-xs text-gray-500">
+                        เลขมิเตอร์: {item.utilityReading.previousReading} -{" "}
+                        {item.utilityReading.currentReading} ({item.utilityReading.unitsUsed}{" "}
+                        หน่วย)
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                    {item.quantity || "-"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                    {item.unitPrice ? `฿${item.unitPrice.toLocaleString()}` : "-"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                    ฿{item.amount.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+              <tr className="bg-gray-50 font-medium">
+                <td
+                  colSpan={3}
+                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right"
+                >
+                  รวมทั้งสิ้น
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {item.quantity || "-"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {item.unitPrice ? `฿${item.unitPrice.toLocaleString()}` : "-"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  ฿{item.amount.toLocaleString()}
+                  ฿{bill.totalAmount.toLocaleString()}
                 </td>
               </tr>
-            ))}
-            <tr className="bg-gray-50 font-medium">
-              <td
-                colSpan={3}
-                className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right"
-              >
-                รวมทั้งสิ้น
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                ฿{bill.totalAmount.toLocaleString()}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
 
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            {/* ข้อมูลการชำระเงิน */}
+            <h3 className="text-lg font-medium mb-2">ข้อมูลการชำระเงิน</h3>
+            <div className="space-y-1">
+              <p className="font-medium">ยอดรวม: ฿{bill.totalAmount.toLocaleString()}</p>
+              <p className="text-green-600 font-medium">ชำระแล้ว: ฿{bill.paidAmount.toLocaleString()}</p>
+              <p className={`font-medium ${bill.remainingAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                คงเหลือ: ฿{bill.remainingAmount.toLocaleString()}
+              </p>
+              <p className="text-sm text-gray-500">
+                สถานะ: <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(bill.status)}`}>
+                  {getStatusText(bill.status)}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-gray-500 mt-4">
+              หากมีข้อสงสัยกรุณาติดต่อเจ้าหน้าที่
+            </p>
+            <p className="text-sm text-gray-500">
+              ขอบคุณที่ใช้บริการ
+            </p>
+          </div>
+        </div>
+
+        {/* ส่วนแสดงประวัติการชำระเงิน (ไม่แสดงในการพิมพ์) */}
         {bill.payments && bill.payments.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-200">
+          <div className="px-6 py-4 border-t border-gray-200 mt-6 no-print">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               ประวัติการชำระเงิน
             </h3>
@@ -289,22 +412,28 @@ export default function BillDetailsPage({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {bill.payments.map((payment, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(payment.paidAt).toLocaleString("th-TH")}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {getPaymentMethodText(payment.method)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {payment.reference || "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      ฿{payment.amount.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {/* ใช้ Set เพื่อเก็บ ID ที่แสดงไปแล้ว เพื่อป้องกันการแสดงซ้ำ */}
+                {Array.from(new Set(bill.payments.map(payment => payment.id))).map(paymentId => {
+                  const payment = bill.payments.find(p => p.id === paymentId);
+                  if (!payment) return null;
+                  
+                  return (
+                    <tr key={payment.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {payment.paidAt ? new Date(payment.paidAt).toLocaleString("th-TH") : "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {getPaymentMethodText(payment.method)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {payment.reference || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        ฿{payment.amount.toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
                 <tr className="bg-gray-50 font-medium">
                   <td
                     colSpan={3}

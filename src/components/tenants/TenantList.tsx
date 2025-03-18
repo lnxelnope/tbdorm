@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Dormitory, Tenant } from "@/types/dormitory";
+import { Dormitory } from "@/types/dormitory";
+import type { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import EditTenantModal from "./EditTenantModal";
 import DeleteTenantModal from "./DeleteTenantModal";
 import { toast } from "sonner";
@@ -26,7 +28,7 @@ interface TenantListProps {
   onRefresh: () => void;
 }
 
-type SortField = 'name' | 'onTime' | 'late' | 'outstanding' | 'dormitory' | 'roomNumber' | 'startDate' | 'deposit' | 'numberOfResidents' | 'rent' | 'outstandingBalance';
+type SortField = 'name' | 'roomNumber' | 'startDate' | 'deposit' | 'numberOfResidents' | 'rent';
 
 interface TenantPaymentHistory {
   onTimeCount: number;
@@ -229,89 +231,75 @@ export default function TenantList({
     }
   };
 
-  const calculateRent = (tenant: Tenant, dormitory: Dormitory | undefined) => {
-    if (!dormitory?.config?.roomTypes) return 0;
+  const calculateRoomPrice = (room: Room, roomType: RoomType, config: DormitoryConfig) => {
+    return calculateTotalPrice(room, config).total;
+  };
 
-    const room = {
+  const calculateRent = (tenant: Tenant, dormitory: Dormitory | undefined) => {
+    if (!dormitory?.config) return 0;
+    
+    const room: Room = {
       id: `${tenant.dormitoryId}_${tenant.roomNumber}`,
       dormitoryId: tenant.dormitoryId,
       number: tenant.roomNumber,
       floor: parseInt(tenant.roomNumber.substring(0, 1)),
-      status: 'occupied' as const,
-      roomType: Object.values(dormitory.config.roomTypes).find(type => type.isDefault)?.id || '',
+      status: 'occupied',
+      roomType: Object.keys(dormitory.config.roomTypes)[0] || '',
       initialMeterReading: 0,
-      hasAirConditioner: false,
-      hasParking: false,
+      additionalServices: tenant.additionalServices
     };
 
-    const roomType = Object.values(dormitory.config.roomTypes).find(type => type.isDefault);
-    if (!roomType) return 0;
-
-    const config = {
-      additionalFees: dormitory.config.additionalFees || {
-        utilities: {
-          water: { perPerson: null },
-          electric: { unit: null }
-        },
-        items: [],
-        floorRates: {}
-      }
-    };
-
-    return calculateTotalPrice(room, [roomType], config);
+    return calculateTotalPrice(room, dormitory.config, tenant).total;
   };
 
   const filteredTenants = tenants.filter((tenant) => {
-    const matchesDormitory =
-      selectedDormitory === "" || tenant.dormitoryId === selectedDormitory;
-    const matchesSearch =
-      searchQuery === "" ||
-      tenant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tenant.phone.includes(searchQuery) ||
-      tenant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tenant.roomNumber.includes(searchQuery);
+    const matchesDormitory = selectedDormitory ? tenant.dormitoryId === selectedDormitory : true;
+    const matchesSearch = searchQuery
+      ? tenant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tenant.roomNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tenant.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tenant.lineId?.toLowerCase().includes(searchQuery.toLowerCase())
+      : true;
 
     return matchesDormitory && matchesSearch;
-  }).sort((a, b) => {
+  });
+
+  const sortedTenants = [...filteredTenants].sort((a, b) => {
     const direction = sortConfig.direction === 'asc' ? 1 : -1;
-    const paymentHistoryA = paymentHistories[a.id] || { onTimeCount: 0, lateCount: 0, outstandingCount: 0 };
-    const paymentHistoryB = paymentHistories[b.id] || { onTimeCount: 0, lateCount: 0, outstandingCount: 0 };
     
     switch (sortConfig.field) {
       case 'name':
         return direction * a.name.localeCompare(b.name);
-      case 'onTime':
-        return direction * (paymentHistoryA.onTimeCount - paymentHistoryB.onTimeCount);
-      case 'late':
-        return direction * (paymentHistoryA.lateCount - paymentHistoryB.lateCount);
-      case 'outstanding':
-        return direction * (paymentHistoryA.outstandingCount - paymentHistoryB.outstandingCount);
-      case 'dormitory':
-        const dormA = dormitories.find(d => d.id === a.dormitoryId)?.name || '';
-        const dormB = dormitories.find(d => d.id === b.dormitoryId)?.name || '';
-        return direction * dormA.localeCompare(dormB);
       case 'roomNumber':
         return direction * a.roomNumber.localeCompare(b.roomNumber);
       case 'startDate':
         return direction * (new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       case 'deposit':
         return direction * (a.deposit - b.deposit);
-      case 'numberOfResidents':
-        return direction * (a.numberOfResidents - b.numberOfResidents);
-      case 'rent':
-        const rentA = calculateRent(a, dormitories.find(d => d.id === a.dormitoryId));
-        const rentB = calculateRent(b, dormitories.find(d => d.id === b.dormitoryId));
+      case 'numberOfResidents': {
+        const residentsA = a.numberOfResidents || 0;
+        const residentsB = b.numberOfResidents || 0;
+        return direction * (residentsA - residentsB);
+      }
+      case 'rent': {
+        const rentA = calculateRent(a, dormitories.find(d => d.id === a.dormitoryId)) || 0;
+        const rentB = calculateRent(b, dormitories.find(d => d.id === b.dormitoryId)) || 0;
         return direction * (rentA - rentB);
-      case 'outstandingBalance':
-        return direction * (a.outstandingBalance - b.outstandingBalance);
+      }
       default:
         return 0;
     }
   });
 
   const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortConfig.field !== field) return null;
-    return sortConfig.direction === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />;
+    if (sortConfig.field !== field) {
+      return null;
+    }
+    return sortConfig.direction === 'asc' ? (
+      <ChevronUp className="w-4 h-4" />
+    ) : (
+      <ChevronDown className="w-4 h-4" />
+    );
   };
 
   // เพิ่มฟังก์ชันโหลดข้อมูลประวัติการใช้ไฟฟ้า
@@ -497,22 +485,6 @@ export default function TenantList({
                       <SortIcon field="name" />
                     </div>
                   </th>
-                  <th 
-                    onClick={() => handleSort('outstandingBalance')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                  >
-                    <div className="flex items-center gap-1">
-                      ยอดค้างชำระ
-                      <SortIcon field="outstandingBalance" />
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => handleSort('dormitory')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                  >
-                    หอพัก
-                    <SortIcon field="dormitory" />
-                  </th>
                   <th
                     onClick={() => handleSort('roomNumber')}
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
@@ -535,10 +507,17 @@ export default function TenantList({
                     <SortIcon field="deposit" />
                   </th>
                   <th
+                    onClick={() => handleSort('numberOfResidents')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                  >
+                    จำนวนผู้พัก
+                    <SortIcon field="numberOfResidents" />
+                  </th>
+                  <th
                     onClick={() => handleSort('rent')}
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                   >
-                    ค่าเช่า/เดือน
+                    ค่าเช่า
                     <SortIcon field="rent" />
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -547,7 +526,7 @@ export default function TenantList({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTenants.map((tenant) => {
+                {sortedTenants.map((tenant) => {
                   const dormitory = dormitories.find(
                     (d) => d.id === tenant.dormitoryId
                   );
@@ -577,16 +556,6 @@ export default function TenantList({
                         </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`text-sm ${tenant.outstandingBalance > 0 ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                          {tenant.outstandingBalance.toLocaleString()} บาท
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {dormitory?.name || "-"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
                         <Link 
                           href={`/dormitories/${tenant.dormitoryId}/rooms?search=${tenant.roomNumber}`}
                           className="text-sm text-blue-600 hover:text-blue-900 hover:underline"
@@ -594,20 +563,17 @@ export default function TenantList({
                           {tenant.roomNumber}
                         </Link>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {new Date(tenant.startDate).toLocaleDateString("th-TH")}
-                        </div>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(tenant.startDate).toLocaleDateString('th-TH')}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {tenant.deposit.toLocaleString()} บาท
-                        </div>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {tenant.deposit.toLocaleString()} บาท
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {rent.toLocaleString()} บาท
-                        </div>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {tenant.numberOfResidents || '-'} คน
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {calculateRent(tenant, dormitory).toLocaleString()} บาท
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button

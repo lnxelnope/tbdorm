@@ -26,19 +26,23 @@ import {
   Timestamp,
   limit,
 } from "firebase/firestore";
-import type { 
-  Dormitory, 
-  Room, 
-  RoomType, 
-  Tenant, 
-  UtilityReading, 
-  Bill, 
-  Payment, 
-  PromptPayConfig, 
+import {
+  Room,
+  RoomType,
+  UtilityReading,
+  Bill,
+  Payment,
+  PromptPayConfig,
   LineNotifyConfig,
+  Dormitory,
+  DormitoryConfig,
+  AdditionalFeeItem,
   BillingConditions,
-  AdditionalFeeItem
-} from '@/types/dormitory';
+  MeterReading
+} from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
+import { ApiResponse } from '@/types/api';
+import { getStorage, ref, deleteObject, listAll, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Constants
 const COLLECTIONS = {
@@ -393,35 +397,94 @@ export const updateRoom = async (dormitoryId: string, roomId: string, data: Part
 };
 
 export const deleteRoom = async (dormitoryId: string, roomId: string) => {
+  console.log(`Attempting to delete room: ${roomId} from dormitory: ${dormitoryId}`);
+  
   try {
+    // ตรวจสอบว่ามีผู้เช่าในห้องนี้หรือไม่
+    const tenantsRef = collection(db, `dormitories/${dormitoryId}/tenants`);
+    const tenantsQuery = query(tenantsRef, where("roomId", "==", roomId));
+    const tenantsSnapshot = await getDocs(tenantsQuery);
+    
+    if (!tenantsSnapshot.empty) {
+      console.error(`Cannot delete room ${roomId} because it has tenants`);
+      return { 
+        success: false, 
+        error: "ไม่สามารถลบห้องพักได้เนื่องจากมีผู้เช่าอยู่ กรุณาย้ายผู้เช่าออกก่อน" 
+      };
+    }
+
     // ลบค่ามิเตอร์ทั้งหมดของห้องนี้
+    console.log(`Deleting meter readings for room: ${roomId}`);
     const readingsRef = collection(db, `dormitories/${dormitoryId}/utility-readings`);
     const readingsQuery = query(readingsRef, where("roomId", "==", roomId));
     const readingsSnapshot = await getDocs(readingsQuery);
     
-    const deletePromises = readingsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+    console.log(`Found ${readingsSnapshot.size} meter readings to delete`);
+    const deletePromises = readingsSnapshot.docs.map(doc => {
+      console.log(`Deleting meter reading: ${doc.id}`);
+      return deleteDoc(doc.ref);
+    });
     await Promise.all(deletePromises);
+    console.log(`All meter readings deleted successfully`);
 
     // ลบห้อง
+    console.log(`Deleting room document: ${roomId}`);
     const roomRef = doc(db, `dormitories/${dormitoryId}/rooms/${roomId}`);
+    
+    // ตรวจสอบว่าห้องมีอยู่จริงหรือไม่
+    const roomDoc = await getDoc(roomRef);
+    if (!roomDoc.exists()) {
+      console.error(`Room ${roomId} does not exist`);
+      return { success: false, error: "ไม่พบห้องพักที่ต้องการลบ" };
+    }
+    
     await deleteDoc(roomRef);
+    console.log(`Room ${roomId} deleted successfully`);
 
     return { success: true };
   } catch (error) {
     console.error("Error deleting room:", error);
+    // แสดงรายละเอียด error ที่เกิดขึ้น
+    if (error instanceof Error) {
+      console.error(`Error message: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
     return { success: false, error };
   }
 };
 
 export const getRooms = async (dormitoryId: string): Promise<{ success: boolean; data?: Room[] }> => {
   try {
+    console.log(`Fetching rooms for dormitory: ${dormitoryId}`);
     const roomsRef = collection(db, "dormitories", dormitoryId, "rooms");
     const roomsSnapshot = await getDocs(roomsRef);
-    const rooms = roomsSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      dormitoryId,
-      ...doc.data()
-    })) as Room[];
+    
+    if (roomsSnapshot.empty) {
+      console.log(`No rooms found for dormitory: ${dormitoryId}`);
+      return { success: true, data: [] };
+    }
+    
+    const rooms: Room[] = [];
+    
+    // ตรวจสอบแต่ละห้องว่ามีอยู่จริงหรือไม่
+    for (const doc of roomsSnapshot.docs) {
+      try {
+        const roomData = doc.data() as Room;
+        roomData.id = doc.id;
+        
+        // ตรวจสอบว่าข้อมูลห้องมีครบถ้วนหรือไม่
+        if (!roomData.number || !roomData.dormitoryId) {
+          console.warn(`Room ${doc.id} has incomplete data, skipping`);
+          continue;
+        }
+        
+        rooms.push(roomData);
+      } catch (error) {
+        console.error(`Error processing room ${doc.id}:`, error);
+      }
+    }
+    
+    console.log(`Found ${rooms.length} valid rooms for dormitory: ${dormitoryId}`);
     return { success: true, data: rooms };
   } catch (error) {
     console.error("Error getting rooms:", error);
@@ -809,20 +872,9 @@ export const deleteAllUtilityReadings = async (dormitoryId: string) => {
 };
 
 // Bill Functions
-export const createBill = async (dormitoryId: string, data: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => {
-  try {
-    const billRef = collection(db, `dormitories/${dormitoryId}/bills`);
-    const docRef = await addDoc(billRef, {
-      ...data,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    return { success: true, id: docRef.id };
-  } catch (error) {
-    console.error('Error creating bill:', error);
-    return { success: false, error };
-  }
+export const createBillLegacy = async (dormitoryId: string, data: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => {
+  console.warn('createBillLegacy is deprecated, please use createBill from billUtils.ts instead');
+  // โค้ดของฟังก์ชัน
 };
 
 export const getBills = async (dormitoryId: string, filters?: {
@@ -1202,12 +1254,10 @@ export const getBillingConditions = async (dormitoryId: string) => {
     // ถ้ายังไม่เคยตั้งค่า ใช้ค่าเริ่มต้น
     const defaultConditions: any = {
       allowedDaysBeforeDueDate: 7,
-      requireMeterReading: true,
-      allowPartialBilling: false,
-      minimumStayForBilling: 0,
-      gracePeriod: 7,
+      waterBillingType: "perPerson",
+      electricBillingType: "perUnit",
       lateFeeRate: 2,
-      autoGenerateBill: false
+      billingDay: 1
     };
     
     return { success: true, data: defaultConditions };
@@ -1451,3 +1501,103 @@ export const getTenantHistory = async (dormitoryId: string) => {
     return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลประวัติผู้เช่า' };
   }
 };
+
+export const updateRoomStatus = async (dormitoryId: string, roomId: string, status: Room['status']): Promise<ApiResponse<boolean>> => {
+  try {
+    const roomRef = doc(db, 'dormitories', dormitoryId, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      status,
+      updatedAt: new Date()
+    });
+    
+    return {
+      success: true,
+      data: true
+    };
+  } catch (error) {
+    console.error('Error updating room status:', error);
+    return {
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการอัพเดทสถานะห้อง'
+    };
+  }
+};
+
+/**
+ * ลบรูปภาพทั้งหมดที่เกี่ยวข้องกับบิล
+ * @param dormitoryId - รหัสหอพัก
+ * @param billId - รหัสบิล
+ */
+export async function deletePaymentSlipsByBillId(dormitoryId: string, billId: string): Promise<void> {
+  try {
+    const storage = getStorage();
+    const slipsRef = ref(storage, `payment-slips/${dormitoryId}/${billId}`);
+    
+    try {
+      // ดึงรายการไฟล์ทั้งหมดในโฟลเดอร์
+      const listResult = await listAll(slipsRef);
+      
+      // ลบไฟล์ทีละไฟล์
+      const deletePromises = listResult.items.map(itemRef => {
+        return deleteObject(itemRef)
+          .catch(error => {
+            console.error(`Error deleting file ${itemRef.fullPath}:`, error);
+          });
+      });
+      
+      // รอให้ลบไฟล์ทั้งหมดเสร็จสิ้น
+      await Promise.all(deletePromises);
+    } catch (listError) {
+      console.error(`Error listing files in folder payment-slips/${dormitoryId}/${billId}:`, listError);
+      
+      // ตรวจสอบว่าเป็นข้อผิดพลาด CORS หรือไม่
+      if (listError instanceof Error && 
+          (listError.message.includes('CORS') || 
+           listError.message.includes('access control') || 
+           listError.message.includes('cross-origin'))) {
+        console.warn('CORS error detected. This might be due to CORS configuration issues.');
+        console.warn('Please make sure your Firebase Storage CORS settings include your development domain.');
+        console.warn('You can update CORS settings in the Firebase Console or using the Firebase CLI.');
+      }
+    }
+  } catch (error) {
+    console.error('Error in deletePaymentSlipsByBillId:', error);
+  }
+}
+
+/**
+ * อัปโหลดรูปภาพไปยัง Firebase Storage
+ * @param file - ไฟล์ที่ต้องการอัปโหลด
+ * @param path - พาธที่ต้องการเก็บไฟล์ใน Storage
+ * @returns URL ของไฟล์ที่อัปโหลด
+ */
+export async function uploadImage(file: File, path: string): Promise<string> {
+  try {
+    const storage = getStorage();
+    const timestamp = Date.now();
+    const filename = `${timestamp}_${file.name}`;
+    const fullPath = `${path}/${filename}`;
+    const storageRef = ref(storage, fullPath);
+    
+    // ตั้งค่า metadata เพื่อแก้ไขปัญหา CORS
+    const metadata = {
+      contentType: file.type,
+      customMetadata: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Content-Length, Content-Encoding, Content-Disposition'
+      }
+    };
+    
+    // อัปโหลดไฟล์พร้อม metadata
+    await uploadBytes(storageRef, file, metadata);
+    
+    // ดึง URL ของไฟล์
+    const downloadURL = await getDownloadURL(storageRef);
+    
+    return downloadURL;
+  } catch (error) {
+    console.error("Error uploading image:", error);
+    throw error;
+  }
+}

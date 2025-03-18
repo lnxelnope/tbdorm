@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
-import type { Dormitory, Room } from '@/types/dormitory'
+import { X, Plus } from 'lucide-react'
+import type { Dormitory, Room, SpecialItem } from '@/types/dormitory'
 import { toast } from "sonner";
 import { addTenant, getRooms } from "@/lib/firebase/firebaseUtils";
 import { collection, getDocs, doc, writeBatch, serverTimestamp, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
+import { v4 as uuidv4 } from "uuid";
 
 interface AddTenantModalProps {
   isOpen: boolean
@@ -35,6 +36,7 @@ interface TenantFormData {
   };
   outstandingBalance: number;
   roomId: string;
+  specialItems: SpecialItem[];
 }
 
 export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess }: AddTenantModalProps) {
@@ -59,6 +61,7 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
     },
     outstandingBalance: 0,
     roomId: "",
+    specialItems: [],
   });
   const [isIdCardLocked, setIsIdCardLocked] = useState(false);
   const [workplaces, setWorkplaces] = useState<string[]>([]);
@@ -90,23 +93,57 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
 
       try {
         const result = await getRooms(formData.dormitoryId);
-        if (result.success) {
-          // กรองเฉพาะห้องที่ว่าง
-          const emptyRooms = result.data.filter(room => room.status === 'available');
-          // เรียงตามเลขห้อง
+        if (result.success && result.data) {
+          // กรองเฉพาะห้องที่ว่างหรือมีสถานะผิดปกติ
+          const emptyRooms = result.data.filter(room => room.status === 'available' || room.status === 'abnormal');
           const sortedRooms = emptyRooms.sort((a, b) => {
+            // เรียงตามเลขห้อง
             return a.number.localeCompare(b.number, undefined, { numeric: true });
           });
           setAvailableRooms(sortedRooms);
         }
       } catch (error) {
-        console.error('Error loading rooms:', error);
-        toast.error('ไม่สามารถโหลดข้อมูลห้องได้');
+        console.error("Error loading rooms:", error);
+        setAvailableRooms([]);
       }
     };
 
     loadRooms();
   }, [formData.dormitoryId]);
+
+  // เพิ่มฟังก์ชันสำหรับจัดการรายการพิเศษ
+  const handleAddSpecialItem = () => {
+    const newItem: SpecialItem = {
+      id: uuidv4(),
+      name: "",
+      amount: 0,
+      duration: 0,
+      startDate: new Date().toISOString().split("T")[0],
+    };
+    setFormData({
+      ...formData,
+      specialItems: [...formData.specialItems, newItem],
+    });
+  };
+
+  const handleRemoveSpecialItem = (id: string) => {
+    setFormData({
+      ...formData,
+      specialItems: formData.specialItems.filter(item => item.id !== id),
+    });
+  };
+
+  const handleSpecialItemChange = (id: string, field: keyof SpecialItem, value: string | number) => {
+    setFormData({
+      ...formData,
+      specialItems: formData.specialItems.map(item => {
+        if (item.id === id) {
+          return { ...item, [field]: value };
+        }
+        return item;
+      }),
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -139,9 +176,7 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
           content.innerHTML = `
             <h3 class="text-lg font-medium text-red-600">⚠️ พบประวัติการเช่าเก่า</h3>
             <div class="space-y-2 text-sm">
-              <p>พบประวัติการเช่าเก่าจากเลขบัตรประชาชนนี้:</p>
-              <div class="bg-gray-50 p-3 rounded-lg space-y-1">
-                <p>ประวัติการเช่าล่าสุด:</p>
+              <p>พบประวัติการเช่าล่าสุด:</p>
                 <ul class="list-disc pl-4 space-y-1 text-gray-600">
                   <li>เคยเช่าที่: ${previousDormitory?.name || 'ไม่พบข้อมูลหอพัก'}</li>
                   <li>เคยเช่าห้อง: ${history.roomNumber}</li>
@@ -237,13 +272,31 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
         }
       }
 
-      const submitData = {
-        ...formData,
-        deposit: formData.deposit ? Number(formData.deposit) : 0,
-        outstandingBalance: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        status: 'active' as const,
+    // เพิ่ม specialItems ในข้อมูลที่จะบันทึก
+    const tenantData = {
+      name: formData.name,
+      idCard: formData.idCard,
+      phone: formData.phone,
+      email: formData.email,
+      lineId: formData.lineId,
+      currentAddress: formData.currentAddress,
+      workplace: formData.workplace,
+      dormitoryId: formData.dormitoryId,
+      roomId: formData.roomId,
+      roomNumber: roomData.number,
+      roomType: roomData.roomType,
+      status: "active",
+      startDate: formData.startDate,
+      deposit: parseFloat(formData.deposit) || 0,
+      numberOfResidents: formData.numberOfResidents,
+      emergencyContact: formData.emergencyContact,
+      outstandingBalance: formData.outstandingBalance,
+      specialItems: formData.specialItems.map(item => ({
+        ...item,
+        remainingBillingCycles: item.duration > 0 ? item.duration : undefined
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       };
 
       // เริ่ม transaction
@@ -251,7 +304,7 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
 
       // เพิ่มผู้เช่า
       const tenantRef = doc(collection(db, `dormitories/${formData.dormitoryId}/tenants`));
-      batch.set(tenantRef, submitData);
+    batch.set(tenantRef, tenantData);
 
       // อัพเดทสถานะห้องเป็น occupied
       batch.update(doc(db, `dormitories/${formData.dormitoryId}/rooms`, room.id), {
@@ -292,39 +345,24 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
     }
   };
 
-  if (!isOpen) return null
+if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/30" 
-        onClick={onClose}
-        style={{ zIndex: 1000 }}
-      />
-      
-      {/* Modal */}
-      <div 
-        className="fixed inset-0 flex items-center justify-center p-4"
-        style={{ zIndex: 1001 }}
-      >
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-          {/* Header */}
-          <div className="p-6 border-b">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">เพิ่มผู้เช่า</h2>
+  <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+    <div className="fixed inset-0 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="flex justify-between items-center p-4 border-b">
+          <h2 className="text-xl font-semibold">เพิ่มผู้เช่าใหม่</h2>
               <button
                 type="button"
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-500"
+            className="text-gray-500 hover:text-gray-700"
               >
-                <X className="h-5 w-5" />
+            <X size={24} />
               </button>
             </div>
-          </div>
-
-          {/* Content */}
-          <div className="p-6">
+        <div className="p-4 overflow-y-auto flex-1">
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* ฟอร์มข้อมูลผู้เช่า */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -592,26 +630,101 @@ export default function AddTenantModal({ isOpen, onClose, dormitories, onSuccess
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-6">
+            {/* ส่วนของรายการพิเศษ */}
+            <div className="mt-6">
+              <h3 className="text-lg font-medium mb-2">รายการพิเศษ</h3>
+              <div className="space-y-4">
+                {formData.specialItems.map((item) => (
+                  <div key={item.id} className="flex flex-wrap items-start gap-2 p-3 border rounded-md bg-gray-50">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        ชื่อรายการ
+                      </label>
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => handleSpecialItemChange(item.id, "name", e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="ชื่อรายการ"
+                      />
+                    </div>
+                    <div className="w-[120px]">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        จำนวนเงิน
+                      </label>
+                      <input
+                        type="number"
+                        value={item.amount}
+                        onChange={(e) => handleSpecialItemChange(item.id, "amount", parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="จำนวนเงิน"
+                      />
+                    </div>
+                    <div className="w-[120px]">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        จำนวนงวด
+                      </label>
+                      <input
+                        type="number"
+                        value={item.duration}
+                        onChange={(e) => handleSpecialItemChange(item.id, "duration", parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="จำนวนงวด (0 = ไม่จำกัด)"
+                      />
+                    </div>
+                    <div className="w-[150px]">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        วันที่เริ่มต้น
+                      </label>
+                      <input
+                        type="date"
+                        value={item.startDate}
+                        onChange={(e) => handleSpecialItemChange(item.id, "startDate", e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSpecialItem(item.id)}
+                        className="p-1 text-red-500 hover:bg-red-100 rounded-full"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddSpecialItem}
+                  className="flex items-center text-sm text-blue-600 hover:text-blue-800"
+                >
+                  <Plus size={16} className="mr-1" /> เพิ่มรายการพิเศษ
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-6">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-100"
+                disabled={isSubmitting}
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300"
                   disabled={isSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50"
                 >
-                  {isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+                {isSubmitting ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       </div>
-    </>
-  )
+  </div>
+);
 } 

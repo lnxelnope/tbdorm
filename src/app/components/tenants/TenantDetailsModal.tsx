@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getTenant } from "@/lib/firebase/firebaseUtils";
-import { Tenant } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import { toast } from "sonner";
 import Modal from "@/components/ui/modal";
 import { Loader2 } from "lucide-react";
@@ -44,7 +44,7 @@ export default function TenantDetailsModal({
     };
 
     if (isOpen) {
-      loadTenant();
+    loadTenant();
     }
   }, [dormitoryId, tenantId, isOpen]);
 
@@ -57,7 +57,7 @@ export default function TenantDetailsModal({
           </div>
         ) : tenant ? (
           <div className="space-y-4">
-            <div>
+              <div>
               <h3 className="text-sm font-medium text-gray-500">ข้อมูลส่วนตัว</h3>
               <div className="mt-2 space-y-2">
                 <p>
@@ -83,7 +83,7 @@ export default function TenantDetailsModal({
               </div>
             </div>
 
-            <div>
+              <div>
               <h3 className="text-sm font-medium text-gray-500">ผู้ติดต่อฉุกเฉิน</h3>
               <div className="mt-2 space-y-2">
                 {tenant.emergencyContact ? (
@@ -107,7 +107,7 @@ export default function TenantDetailsModal({
               </div>
             </div>
 
-            <div>
+              <div>
               <h3 className="text-sm font-medium text-gray-500">ข้อมูลการเข้าพัก</h3>
               <div className="mt-2 space-y-2">
                 <p>
@@ -138,6 +138,14 @@ export default function TenantDetailsModal({
                      'ย้ายออกแล้ว'}
                   </span>
                 </p>
+                <p>
+                  <span className="font-medium">เงินประกัน:</span>{" "}
+                  {tenant.deposit?.toLocaleString() || "0"} บาท
+                </p>
+                <p>
+                  <span className="font-medium">ยอดค้างชำระ:</span>{" "}
+                  {tenant.outstandingBalance?.toLocaleString() || "0"} บาท
+                </p>
               </div>
             </div>
 
@@ -151,6 +159,38 @@ export default function TenantDetailsModal({
                     ))}
                   </ul>
                 </div>
+              </div>
+            )}
+
+            {tenant.specialItems && tenant.specialItems.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-2">รายการพิเศษ</h3>
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">รายการ</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">จำนวนเงิน</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ระยะเวลา</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">รอบที่เหลือ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tenant.specialItems.map((item, index) => (
+                        <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{item.name}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">{item.amount.toLocaleString()} บาท</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                            {item.duration === 0 ? 'ไม่มีกำหนด' : `${item.duration} รอบ`}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                            {item.duration === 0 ? '-' : (item.remainingBillingCycles !== undefined ? item.remainingBillingCycles : item.duration)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+              </div>
               </div>
             )}
           </div>

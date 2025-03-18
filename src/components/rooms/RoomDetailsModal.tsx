@@ -46,7 +46,7 @@ export default function RoomDetailsModal({
   }, [dormitoryId, roomNumber, isOpen]);
 
   const roomType = room ? roomTypes.find(type => type.id === room.roomType) : null;
-  const totalPrice = room && roomType ? calculateTotalPrice(room, roomTypes, config, currentTenant).total : 0;
+  const totalPrice = room && roomType ? calculateTotalPrice(room, config, currentTenant).total : 0;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>

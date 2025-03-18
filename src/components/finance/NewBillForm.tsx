@@ -50,8 +50,7 @@ export default function NewBillForm({ dormitories, onSuccess, onCancel }: NewBil
     const room = rooms[selectedRoom];
     if (!room || !config?.roomTypes) return 0;
     
-    const roomTypes = Object.values(config.roomTypes);
-    return calculateTotalPrice(room, roomTypes, config, tenant).total;
+    return calculateTotalPrice(room, config, tenant).total;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

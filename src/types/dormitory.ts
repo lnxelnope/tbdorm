@@ -56,14 +56,10 @@ export interface Payment {
 
 export interface BillingConditions {
   allowedDaysBeforeDueDate: number;
-  requireMeterReading: boolean;
   waterBillingType: "perPerson" | "perUnit";
   electricBillingType: "perUnit";
-  allowPartialBilling: boolean;
-  minimumStayForBilling: number;
-  gracePeriod: number;
   lateFeeRate: number;
-  autoGenerateBill: boolean;
+  billingDay: number;
 }
 
 export interface AdditionalFees {
@@ -113,46 +109,26 @@ export interface Room {
   dormitoryId: string;
   number: string;
   floor: number;
-  status: 'available' | 'occupied' | 'maintenance' | 'moving_out';
+  status: 'available' | 'occupied' | 'maintenance' | 'moving_out' | 'abnormal' | 'ready_for_billing' | 'pending_payment';
   roomType: string;
   rent?: number;
   initialMeterReading: number;
   additionalServices?: string[];
+  specialItems?: SpecialItem[];
   tenantId?: string;
   tenantName?: string;
+  latestBillId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
-export interface Tenant {
+export interface SpecialItem {
   id: string;
   name: string;
-  lineId?: string;
-  idCard?: string;
-  phone?: string;
-  email?: string;
-  address?: string;
-  roomNumber: string;
-  status: 'active' | 'moving_out' | 'moved_out';
-  moveInDate?: string;
-  moveOutDate?: string;
-  numberOfResidents?: number;
-  additionalServices?: string[];
-  emergencyContact?: {
-    name: string;
-    relationship: string;
-    phone: string;
-  };
-  hasMeterReading?: boolean;
-  lastMeterReadingDate?: Date;
-  electricityUsage?: {
-    unitsUsed: number;
-    previousReading: number;
-    currentReading: number;
-    charge: number;
-  };
-  canCreateBill?: boolean;
-  statusMessage?: string;
+  amount: number;
+  duration: number; // 0 = ไม่มีกำหนด, > 0 = จำนวนรอบบิล
+  startDate: string; // วันที่เริ่มต้น
+  remainingBillingCycles?: number; // จำนวนรอบบิลที่เหลือ
 }
 
 export interface ExtendedDormitoryConfig {
@@ -177,34 +153,6 @@ export interface ExtendedDormitoryConfig {
   waterRate?: number;
   electricityRate?: number;
   commonFee?: number;
-}
-
-export interface TenantWithBillStatus extends Tenant {
-  hasMeterReading: boolean;
-  lastMeterReadingDate?: Date;
-  electricityUsage?: {
-    unitsUsed: number;
-    previousReading: number;
-    currentReading: number;
-    charge: number;
-  };
-  roomType: string;
-  floor: number;
-  numberOfResidents: number;
-  additionalServices?: string[];
-  canCreateBill: boolean;
-  daysUntilDue: number;
-  reason?: string;
-}
-
-export interface TenantHistory extends Omit<Tenant, 'id'> {
-  id: string;
-  tenantId: string;
-  leaveDate: string;
-  leaveReason: 'incorrect_data' | 'end_contract';
-  note?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface UtilityReading {
@@ -298,6 +246,12 @@ export interface Dormitory {
   id: string;
   name: string;
   address: string;
+  phone: string;
+  description: string;
+  location: {
+    latitude: string;
+    longitude: string;
+  };
   totalFloors: number;
   totalRooms: number;
   facilities: string[];

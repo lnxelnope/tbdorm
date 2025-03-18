@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { getDormitory, updateDormitory, addRoom } from "@/lib/firebase/firebaseUtils";
-import { Dormitory } from "@/types/dormitory";
+import { Dormitory, AdditionalFeeItem } from "@/types/dormitory";
 import { collection, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
@@ -39,6 +39,14 @@ interface FormData {
   status: 'active' | 'inactive';
   config: {
     roomTypes: Record<string, any>;
+    additionalFees: {
+      utilities: {
+        water: { perPerson: number | null };
+        electric: { unit: number | null };
+      };
+      items: AdditionalFeeItem[];
+      floorRates: Record<string, number | null>;
+    };
   };
   floors: number;
 }
@@ -66,6 +74,14 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
     status: "active",
     config: {
       roomTypes: {},
+      additionalFees: {
+        utilities: {
+          water: { perPerson: null },
+          electric: { unit: null }
+        },
+        items: [],
+        floorRates: {}
+      },
     },
     floors: 1,
   });
@@ -90,7 +106,14 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
             facilities: result.data.facilities || [],
             images: result.data.images || [],
             status: result.data.status || "active",
-            config: result.data.config || { roomTypes: {} },
+            config: result.data.config || { roomTypes: {}, additionalFees: {
+              utilities: {
+                water: { perPerson: 0 },
+                electric: { unit: 0 }
+              },
+              items: [],
+              floorRates: {}
+            } },
             floors: result.data.totalFloors || 1,
           });
           setOriginalImages(result.data.images || []);
@@ -145,7 +168,17 @@ export default function EditDormitoryPage({ params }: { params: { id: string } }
         facilities: formData.facilities,
         images: formData.images,
         status: formData.status,
-        config: formData.config,
+        config: {
+          ...formData.config,
+          additionalFees: formData.config.additionalFees || {
+            utilities: {
+              water: { perPerson: null },
+              electric: { unit: null }
+            },
+            items: [],
+            floorRates: {}
+          }
+        },
       };
 
       console.log("Update data:", updateData);

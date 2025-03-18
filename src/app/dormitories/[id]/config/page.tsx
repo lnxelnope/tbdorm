@@ -27,14 +27,10 @@ interface DormitoryData {
 // เพิ่ม interface สำหรับเงื่อนไขการออกบิล
 interface BillingConditions {
   allowedDaysBeforeDueDate: number;
-  requireMeterReading: boolean;
   waterBillingType: "perPerson" | "perUnit";
   electricBillingType: "perUnit";
-  allowPartialBilling: boolean;
-  minimumStayForBilling: number;
-  gracePeriod: number;
   lateFeeRate: number;
-  autoGenerateBill: boolean;
+  billingDay: number;
 }
 
 // เพิ่ม interface สำหรับ AdditionalFeeItem
@@ -68,14 +64,10 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
   const [dueDate, setDueDate] = useState<number>(5); // default to 5th of month
   const [billingConditions, setBillingConditions] = useState<BillingConditions>({
     allowedDaysBeforeDueDate: 0,
-    requireMeterReading: false,
     waterBillingType: "perPerson",
     electricBillingType: "perUnit",
-    allowPartialBilling: false,
-    minimumStayForBilling: 0,
-    gracePeriod: 0,
     lateFeeRate: 0,
-    autoGenerateBill: false,
+    billingDay: 1,
   });
   const [newItemName, setNewItemName] = useState("");
   const [newItemAmount, setNewItemAmount] = useState<number | null>(null);
@@ -639,6 +631,24 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           <div className="grid gap-6">
             <div className="flex items-center justify-between">
               <div>
+                <label className="text-sm font-medium">วันที่ออกบิลประจำเดือน</label>
+                <p className="text-sm text-gray-500">กำหนดวันที่ออกบิลประจำเดือนของหอพัก</p>
+              </div>
+              <select
+                value={billingConditions.billingDay}
+                onChange={(e) => handleBillingConditionChange('billingDay', parseInt(e.target.value))}
+                className="w-24 rounded-md border-gray-300"
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
                 <label className="text-sm font-medium">จำนวนวันที่สามารถออกบิลก่อนถึงกำหนด</label>
                 <p className="text-sm text-gray-500">กำหนดว่าสามารถออกบิลล่วงหน้าได้กี่วันก่อนถึงกำหนดชำระ</p>
               </div>
@@ -654,56 +664,6 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
 
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm font-medium">ต้องจดมิเตอร์ก่อนออกบิล</label>
-                <p className="text-sm text-gray-500">ต้องมีการจดมิเตอร์ในเดือนนั้นก่อนจึงจะออกบิลได้</p>
-              </div>
-              <Switch
-                checked={billingConditions.requireMeterReading}
-                onCheckedChange={(checked) => handleBillingConditionChange('requireMeterReading', checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">อนุญาตให้ออกบิลบางส่วน</label>
-                <p className="text-sm text-gray-500">สามารถออกบิลเฉพาะบางรายการได้</p>
-              </div>
-              <Switch
-                checked={billingConditions.allowPartialBilling}
-                onCheckedChange={(checked) => handleBillingConditionChange('allowPartialBilling', checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">จำนวนวันขั้นต่ำที่ต้องพัก</label>
-                <p className="text-sm text-gray-500">จำนวนวันขั้นต่ำที่ผู้เช่าต้องพักก่อนจึงจะออกบิลได้</p>
-              </div>
-              <input
-                type="number"
-                value={billingConditions.minimumStayForBilling}
-                onChange={(e) => handleBillingConditionChange('minimumStayForBilling', parseInt(e.target.value))}
-                className="w-24 rounded-md border-gray-300"
-                min={0}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">ระยะเวลาผ่อนผันการชำระ (วัน)</label>
-                <p className="text-sm text-gray-500">จำนวนวันที่อนุญาตให้จ่ายช้าได้โดยไม่มีค่าปรับ</p>
-              </div>
-              <input
-                type="number"
-                value={billingConditions.gracePeriod}
-                onChange={(e) => handleBillingConditionChange('gracePeriod', parseInt(e.target.value))}
-                className="w-24 rounded-md border-gray-300"
-                min={0}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
                 <label className="text-sm font-medium">อัตราค่าปรับจ่ายช้า (%)</label>
                 <p className="text-sm text-gray-500">เปอร์เซ็นต์ค่าปรับเมื่อชำระเกินกำหนด</p>
               </div>
@@ -714,17 +674,6 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 className="w-24 rounded-md border-gray-300"
                 min={0}
                 step={0.1}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">สร้างบิลอัตโนมัติ</label>
-                <p className="text-sm text-gray-500">สร้างบิลโดยอัตโนมัติเมื่อถึงกำหนด</p>
-              </div>
-              <Switch
-                checked={billingConditions.autoGenerateBill}
-                onCheckedChange={(checked) => handleBillingConditionChange('autoGenerateBill', checked)}
               />
             </div>
           </div>

@@ -1,8 +1,23 @@
 [
   {
-    "origin": ["*"],
-    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "origin": ["https://tbdorm.vercel.app", "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "https://*.vercel.app"],
+    "method": ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
     "maxAgeSeconds": 3600,
-    "responseHeader": ["Content-Type", "Content-Length", "Content-Range"]
+    "allowedHeaders": [
+      "Authorization",
+      "Content-Type",
+      "Content-Length",
+      "Accept",
+      "Origin",
+      "User-Agent"
+    ],
+    "responseHeaders": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Encoding",
+      "Content-Disposition",
+      "x-goog-meta-*",
+      "x-firebase-storage-downloadtokens"
+    ]
   }
 ] 

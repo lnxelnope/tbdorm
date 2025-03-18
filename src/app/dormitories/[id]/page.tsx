@@ -48,26 +48,45 @@ export default function DormitoryPage() {
       name: "ห้องพัก",
       href: `/dormitories/${dormId}/rooms`,
       icon: Home,
+      description: "จัดการห้องพัก",
     },
     {
       name: "รูปแบบห้อง",
       href: `/dormitories/${dormId}/room-types`,
       icon: Boxes,
+      description: "จัดการรูปแบบห้อง",
     },
     {
       name: "ผู้เช่า",
       href: `/dormitories/${dormId}/tenants`,
       icon: Users,
+      description: "จัดการผู้เช่า",
+    },
+    {
+      name: "ประวัติผู้เช่า",
+      href: `/dormitories/${dormId}/tenant-history`,
+      icon: Users,
+      description: "ประวัติผู้เช่าทั้งหมด",
+      highlight: true,
     },
     {
       name: "มิเตอร์",
       href: `/dormitories/${dormId}/utilities`,
       icon: Gauge,
+      description: "จัดการมิเตอร์",
     },
     {
       name: "บิล",
       href: `/dormitories/${dormId}/bills`,
       icon: Receipt,
+      description: "จัดการบิล",
+    },
+    {
+      name: "ประวัติบิล",
+      href: `/dormitories/${dormId}/bill-history`,
+      icon: Receipt,
+      description: "ประวัติบิลทั้งหมด",
+      highlight: true,
     },
     {
       name: "รายงาน",
@@ -181,14 +200,17 @@ export default function DormitoryPage() {
           <Link
             key={item.name}
             href={item.href}
-            className="bg-white shadow rounded-lg p-6 hover:shadow-md transition-shadow duration-200"
+            className={`bg-white shadow rounded-lg p-6 hover:shadow-md transition-shadow duration-200 ${item.highlight ? 'ring-2 ring-blue-500' : ''}`}
           >
             <div className="flex items-center">
-              <item.icon className="h-8 w-8 text-blue-600" />
+              <item.icon className={`h-8 w-8 ${item.highlight ? 'text-blue-700' : 'text-blue-600'}`} />
               <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className={`text-lg font-medium ${item.highlight ? 'text-blue-700' : 'text-gray-900'}`}>
                   {item.name}
                 </h3>
+                {item.description && (
+                  <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+                )}
               </div>
             </div>
           </Link>

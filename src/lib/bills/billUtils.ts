@@ -1,4 +1,4 @@
-import { Tenant } from '@/types/dormitory';
+import { Tenant } from '@/types/tenant';
 
 interface BillStatus {
   canCreateBill: boolean;

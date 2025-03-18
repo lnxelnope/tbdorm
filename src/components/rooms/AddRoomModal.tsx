@@ -6,7 +6,7 @@ import { addRoom, getInitialMeterReading, getRooms, getDormitory } from "@/lib/f
 import { toast } from "sonner";
 import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebaseConfig";
-import Modal from "@/components/ui/modal";
+import { X } from "lucide-react";
 
 interface AddRoomModalProps {
   dormitoryId: string;
@@ -156,49 +156,40 @@ export default function AddRoomModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.numbers.trim() || !formData.roomType) {
-      toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+    setIsSubmitting(true);
+    
+    // แปลง range string เป็น array ของเลขห้อง
+    const roomNumbers = parseRoomNumberRanges(formData.numbers);
+    
+    // ตรวจสอบว่ามีเลขห้องที่ถูกต้องหรือไม่
+    if (roomNumbers.length === 0) {
+      toast.error("กรุณาระบุเลขห้องให้ถูกต้อง");
+      setIsSubmitting(false);
       return;
     }
-
+    
+    // ตรวจสอบว่ามีเลขห้องที่ซ้ำกับห้องที่มีอยู่แล้วหรือไม่
+    const duplicateRooms = roomNumbers.filter(num => 
+      existingRooms.some(room => room.number === num)
+    );
+    
+    if (duplicateRooms.length > 0) {
+      toast.error(`เลขห้อง ${duplicateRooms.join(', ')} มีอยู่แล้ว`);
+      setIsSubmitting(false);
+      return;
+    }
+    
+    // เริ่มการสร้างห้องพัก
+    setProgress({ current: 0, total: roomNumbers.length });
+    
     try {
-      setIsSubmitting(true);
-      const roomNumbers = parseRoomNumberRanges(formData.numbers);
-      
-      if (roomNumbers.length === 0) {
-        toast.error("กรุณาระบุเลขห้องให้ถูกต้อง");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // ตรวจสอบว่ามีเลขห้องซ้ำกันในการสร้างครั้งนี้หรือไม่
-      const uniqueNumbers = new Set(roomNumbers);
-      if (uniqueNumbers.size !== roomNumbers.length) {
-        toast.error("มีเลขห้องที่ซ้ำกันในรายการที่จะสร้าง กรุณาตรวจสอบอีกครั้ง");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // ตรวจสอบเลขห้องซ้ำ
-      if (isRoomNumberTaken(roomNumbers[0])) {
-        toast.error('เลขห้องนี้มีผู้เช่าอยู่แล้ว');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // สร้างห้องพักทีละห้อง
-      let completedRooms = 0;
-      const results = [];
-      
-      for (const number of roomNumbers) {
-        // ใช้ doc().id แทน crypto.randomUUID()
-        const roomRef = doc(collection(db, 'dormitories', dormitoryId, 'rooms'));
-        const roomId = roomRef.id;
+      for (let i = 0; i < roomNumbers.length; i++) {
+        const roomNumber = roomNumbers[i];
         
-        const roomData: Room = {
-          id: roomId, // ใช้ ID ที่ได้จาก Firestore
+        // สร้างข้อมูลห้องพัก
+        const newRoom: Omit<Room, 'id'> = {
           dormitoryId,
-          number,
+          number: roomNumber,
           floor: formData.floor,
           roomType: formData.roomType,
           status: formData.status,
@@ -207,183 +198,202 @@ export default function AddRoomModal({
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-
-        const result = await addRoom(dormitoryId, roomData);
-        results.push(result);
-        completedRooms++;
-        setProgress({ current: completedRooms, total: roomNumbers.length });
-      }
-
-      // ตรวจสอบผลลัพธ์
-      const failedRooms = results.filter(result => !result.success);
-      if (failedRooms.length > 0) {
-        toast.error(`ไม่สามารถสร้างห้องพักได้ ${failedRooms.length} ห้อง`);
-      } else {
-        toast.success(`สร้างห้องพักสำเร็จ ${results.length} ห้อง`);
-        const firstRoom = results[0];
-        if (firstRoom.success && firstRoom.data) {
-          onSuccess(firstRoom.data);
+        
+        // เพิ่มห้องพักลงในฐานข้อมูล
+        const result = await addRoom(dormitoryId, newRoom);
+        
+        if (!result.success) {
+          throw new Error(`ไม่สามารถเพิ่มห้อง ${roomNumber} ได้`);
         }
-        onClose();
+        
+        // อัพเดทความคืบหน้า
+        setProgress({ current: i + 1, total: roomNumbers.length });
       }
+      
+      // เมื่อเพิ่มห้องพักสำเร็จทั้งหมด
+      toast.success(`เพิ่มห้องพักสำเร็จ ${roomNumbers.length} ห้อง`);
+      
+      // เรียกใช้ callback onSuccess
+      if (roomNumbers.length === 1 && onSuccess) {
+        // ถ้าเพิ่มห้องเดียว ส่งข้อมูลห้องกลับไป
+        const result = await getRooms(dormitoryId);
+        if (result.success && result.data) {
+          const addedRoom = result.data.find(r => r.number === roomNumbers[0]);
+          if (addedRoom) {
+            onSuccess(addedRoom);
+          }
+        }
+      } else if (onSuccess) {
+        // ถ้าเพิ่มหลายห้อง ส่งข้อมูลห้องแรกกลับไป (เพื่อให้ตรงกับ interface)
+        const result = await getRooms(dormitoryId);
+        if (result.success && result.data) {
+          const addedRoom = result.data.find(r => r.number === roomNumbers[0]);
+          if (addedRoom) {
+            onSuccess(addedRoom);
+          }
+        }
+      }
+      
+      // ปิด modal
+      onClose();
     } catch (error) {
       console.error("Error adding rooms:", error);
       toast.error("เกิดข้อผิดพลาดในการเพิ่มห้องพัก");
     } finally {
       setIsSubmitting(false);
-      setProgress({ current: 0, total: 0 });
     }
   };
 
-  // เพิ่มฟังก์ชันสำหรับจัดการการเลือกค่าบริการเพิ่มเติม
-  const handleAdditionalServiceChange = (serviceId: string, checked: boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      additionalServices: checked 
-        ? [...prev.additionalServices, serviceId]
-        : prev.additionalServices.filter(id => id !== serviceId)
-    }));
-  };
+  if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">เพิ่มห้องพัก</h2>
-        {isSubmitting && progress.total > 0 && (
-          <div className="mb-4">
-            <div className="text-center mb-2 text-xl font-semibold">
-              กำลังเพิ่มห้องพัก {progress.current} จาก {progress.total} ห้อง
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-4">
-              <div 
-                className="bg-blue-600 h-4 rounded-full transition-all duration-300"
-                style={{ width: `${(progress.current / progress.total) * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              เลขห้อง <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="numbers"
-              value={formData.numbers}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (isRoomNumberTaken(value)) {
-                  toast.error('เลขห้องนี้มีผู้เช่าอยู่แล้ว');
-                  return;
-                }
-                setFormData({ ...formData, numbers: value });
-              }}
-              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5"
-              placeholder="เช่น 101-105, 201, 203"
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              สามารถระบุเป็นช่วงได้ เช่น 101-105 หรือระบุทีละห้องได้ เช่น 201, 203
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              ชั้น <span className="text-red-500">*</span>
-            </label>
-            <select
-              name="floor"
-              value={formData.floor}
-              onChange={(e) =>
-                setFormData({ ...formData, floor: parseInt(e.target.value) })
-              }
-              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
-            >
-              <option value="">เลือกชั้น</option>
-              {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
-                <option key={floor} value={floor}>
-                  ชั้น {floor}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              รูปแบบห้อง <span className="text-red-500">*</span>
-            </label>
-            <select
-              name="roomType"
-              value={formData.roomType}
-              onChange={(e) =>
-                setFormData({ ...formData, roomType: e.target.value })
-              }
-              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
-            >
-              <option value="">เลือกประเภทห้อง</option>
-              {roomTypes.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}: {type.basePrice?.toLocaleString() ?? 0} บาท/เดือน
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              ค่ามิเตอร์เริ่มต้น
-            </label>
-            <input
-              type="number"
-              name="initialMeterReading"
-              value={formData.initialMeterReading}
-              onChange={(e) =>
-                setFormData({ ...formData, initialMeterReading: e.target.value })
-              }
-              min="0"
-              className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
-              placeholder="ค่ามิเตอร์เริ่มต้น"
-            />
-          </div>
-
-          {/* เพิ่มส่วนของค่าบริการเพิ่มเติม */}
-          <div className="space-y-4 mt-4">
-            <h3 className="text-sm font-medium text-gray-900">ค่าบริการเพิ่มเติม</h3>
-            <div className="space-y-2">
-              {dormitoryConfig?.additionalFees?.items?.map((item) => (
-                <label key={item.id} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.additionalServices.includes(item.id)}
-                    onChange={(e) => handleAdditionalServiceChange(item.id, e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-600">
-                    {item.name} ({item.amount.toLocaleString()} บาท)
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 flex justify-end gap-3">
+    <div className="fixed inset-0 z-50">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+          <div className="flex justify-between items-center p-4 border-b">
+            <h2 className="text-xl font-semibold">เพิ่มห้องพักใหม่</h2>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="text-gray-500 hover:text-gray-700"
             >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+              <X size={24} />
             </button>
           </div>
-        </form>
+          <div className="p-4 overflow-y-auto flex-1">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  เลขห้อง <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="numbers"
+                  value={formData.numbers}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (isRoomNumberTaken(value)) {
+                      toast.error('เลขห้องนี้มีผู้เช่าอยู่แล้ว');
+                      return;
+                    }
+                    setFormData({ ...formData, numbers: value });
+                  }}
+                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5"
+                  placeholder="เช่น 101-105, 201, 203"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  สามารถระบุเป็นช่วงได้ เช่น 101-105 หรือระบุทีละห้องได้ เช่น 201, 203
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ชั้น <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="floor"
+                  value={formData.floor}
+                  onChange={(e) =>
+                    setFormData({ ...formData, floor: parseInt(e.target.value) })
+                  }
+                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <option value="">เลือกชั้น</option>
+                  {Array.from({ length: totalFloors }, (_, i) => i + 1).map((floor) => (
+                    <option key={floor} value={floor}>
+                      ชั้น {floor}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  รูปแบบห้อง <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="roomType"
+                  value={formData.roomType}
+                  onChange={(e) =>
+                    setFormData({ ...formData, roomType: e.target.value })
+                  }
+                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <option value="">เลือกประเภทห้อง</option>
+                  {roomTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}: {type.basePrice?.toLocaleString() ?? 0} บาท/เดือน
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ค่ามิเตอร์เริ่มต้น
+                </label>
+                <input
+                  type="number"
+                  name="initialMeterReading"
+                  value={formData.initialMeterReading}
+                  onChange={(e) =>
+                    setFormData({ ...formData, initialMeterReading: e.target.value })
+                  }
+                  min="0"
+                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:text-sm px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
+                  placeholder="ค่ามิเตอร์เริ่มต้น"
+                />
+              </div>
+
+              <div className="mt-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">บริการเสริม</h3>
+                <div className="space-y-2">
+                  {dormitoryConfig?.additionalFees?.items?.map((service) => (
+                    <div key={service.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id={`service-${service.id}`}
+                        checked={formData.additionalServices.includes(service.id)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFormData({
+                            ...formData,
+                            additionalServices: checked
+                              ? [...formData.additionalServices, service.id]
+                              : formData.additionalServices.filter(id => id !== service.id)
+                          });
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor={`service-${service.id}`} className="ml-2 block text-sm text-gray-900">
+                        {service.name} (+{service.amount} บาท)
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 } 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Dormitory, ExtendedDormitoryConfig, TenantWithBillStatus, Room, DormitoryConfig } from "@/types/dormitory";
 import { Bill, BillItem } from "@/types/bill";
 import { MeterReading } from "@/types/meter";
-import { queryDormitories, getRooms, queryTenants, getLatestMeterReading } from "@/lib/firebase/firebaseUtils";
+import { queryDormitories, getRooms, queryTenants, getLatestMeterReading, getDormitory } from "@/lib/firebase/firebaseUtils";
 import { getBillsByDormitory, createBill, deleteBill } from "@/lib/firebase/billUtils";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,6 +40,7 @@ export default function BillsList({ config }: BillsListProps) {
   const [statusFilter, setStatusFilter] = useState('');
   const [tenants, setTenants] = useState<TenantWithBillStatus[]>([]);
   const [showAllTenants, setShowAllTenants] = useState(false);
+  const [rooms, setRooms] = useState<Record<string, Room>>({});
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -97,69 +98,63 @@ export default function BillsList({ config }: BillsListProps) {
 
       setIsLoading(true);
       try {
-        const [billsResult, tenantsResult] = await Promise.all([
-          getBillsByDormitory(selectedDormitory),
+        // 1. โหลดข้อมูลหอพักเพื่อดึง config
+        const dormResult = await getDormitory(selectedDormitory);
+        console.log('ข้อมูลหอพัก:', dormResult);
+
+        let roomPrices: Record<string, number> = {};
+        if (dormResult.success && dormResult.data?.config?.roomTypes) {
+          roomPrices = dormResult.data.config.roomTypes;
+          console.log('ราคาห้องจาก config:', roomPrices);
+        }
+
+        // 2. โหลดข้อมูลห้องและผู้เช่า
+        const [roomsResult, tenantsResult] = await Promise.all([
+          getRooms(selectedDormitory),
           queryTenants(selectedDormitory)
         ]);
 
-        if (billsResult.success && billsResult.data) {
-          setBills(billsResult.data as Bill[]);
+        // 3. สร้าง Map ของข้อมูลห้อง
+        const roomsMap: Record<string, Room> = {};
+        if (roomsResult.success && roomsResult.data) {
+          roomsResult.data.forEach(room => {
+            roomsMap[room.id] = {
+              ...room,
+              basePrice: roomPrices[room.roomType]?.basePrice || 0
+            };
+            console.log(`ข้อมูลห้อง ${room.id}:`, {
+              id: room.id,
+              number: room.number,
+              roomType: room.roomType,
+              basePrice: roomPrices[room.roomType]?.basePrice || 0
+            });
+          });
         }
+        setRooms(roomsMap);
 
+        // 4. เชื่อมข้อมูลผู้เช่ากับราคาห้อง
         if (tenantsResult.success && tenantsResult.data) {
-          const tenantsWithStatus = await Promise.all(
-            tenantsResult.data
-              .filter(tenant => tenant.status === 'active' && tenant.roomNumber)
-              .map(async (tenant) => {
-                const meterReading = await getLatestMeterReading(
-                  selectedDormitory,
-                  tenant.roomNumber,
-                  "electric"
-                );
+          const tenantsWithRoomData = tenantsResult.data
+            .filter(tenant => tenant.status === 'active' && tenant.roomId)
+            .map(tenant => {
+              const roomData = roomsMap[tenant.roomId];
+              const roomConfig = roomData?.roomType ? roomPrices[roomData.roomType] : null;
 
-                const today = new Date();
-                const currentMonth = today.getMonth() + 1;
-                const currentYear = today.getFullYear();
+              return {
+                ...tenant,
+                roomType: roomConfig?.name || 'default',
+                basePrice: roomConfig?.basePrice || 0,
+                floor: roomData?.floor || parseInt(tenant.roomNumber?.split('-')[0]) || 0,
+                hasMeterReading: false,
+                canCreateBill: false,
+                daysUntilDue: 0
+              };
+            });
 
-                const hasCurrentMonthBill = billsResult.success && 
-                  Array.isArray(billsResult.data) && 
-                  billsResult.data.some((bill: any) => 
-                    bill.roomNumber === tenant.roomNumber && 
-                    bill.month === currentMonth &&
-                    bill.year === currentYear
-                  );
-
-                const meterData = meterReading.success && meterReading.data as MeterReadingData;
-                const readingDate = meterData ? new Date(meterData.readingDate) : undefined;
-                
-                const isCurrentMonthReading = readingDate ? 
-                  readingDate.getMonth() === today.getMonth() && 
-                  readingDate.getFullYear() === today.getFullYear() : 
-                  false;
-
-                const tenantWithStatus: TenantWithBillStatus = {
-                  ...tenant,
-                  hasMeterReading: Boolean(isCurrentMonthReading),
-                  lastMeterReadingDate: readingDate,
-                  electricityUsage: meterData ? {
-                    previousReading: meterData.previousReading,
-                    currentReading: meterData.currentReading,
-                    unitsUsed: meterData.unitsUsed,
-                    charge: meterData.unitsUsed * (config?.electricityRate || 8)
-                  } : undefined,
-                  canCreateBill: Boolean(isCurrentMonthReading && !hasCurrentMonthBill),
-                  daysUntilDue: 0,
-                  roomType: 'default',
-                  floor: parseInt(tenant.roomNumber.split('-')[0]) || 0,
-                  numberOfResidents: tenant.numberOfResidents || 1
-                };
-
-                return tenantWithStatus;
-              })
-          );
-
-          setTenants(tenantsWithStatus);
+          console.log('ข้อมูลผู้เช่าที่เชื่อมกับราคาห้องแล้ว:', tenantsWithRoomData);
+          setTenants(tenantsWithRoomData);
         }
+
       } catch (error) {
         console.error("Error loading data:", error);
         toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
@@ -169,7 +164,7 @@ export default function BillsList({ config }: BillsListProps) {
     };
 
     loadData();
-  }, [selectedDormitory, config?.electricityRate]);
+  }, [selectedDormitory]);
 
   const handleRefresh = () => {
     if (selectedDormitory) {

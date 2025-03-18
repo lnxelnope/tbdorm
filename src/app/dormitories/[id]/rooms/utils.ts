@@ -1,4 +1,5 @@
-import { Room, RoomType, DormitoryConfig } from "@/types/dormitory";
+import { Room, RoomType, DormitoryConfig, SpecialItem } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 
 interface TotalPriceResult {
   total: number;
@@ -6,6 +7,7 @@ interface TotalPriceResult {
     basePrice: number;
     floorRate: number;
     additionalServices: number;
+    specialItems: number;
     water: number;
     electricity: number;
   };
@@ -14,19 +16,7 @@ interface TotalPriceResult {
 export const calculateTotalPrice = (
   room: Room, 
   config: DormitoryConfig,
-  tenant?: {
-    id: string;
-    name: string;
-    roomNumber: string;
-    status: 'active' | 'moving_out' | 'moved_out';
-    numberOfResidents?: number;
-    electricityUsage?: {
-      unitsUsed: number;
-      previousReading?: number;
-      currentReading?: number;
-      charge?: number;
-    };
-  } | null
+  tenant?: Tenant | null
 ): TotalPriceResult => {
   // หา roomType จาก config ของหอพัก
   const roomType = config.roomTypes[room.roomType];
@@ -38,6 +28,7 @@ export const calculateTotalPrice = (
         basePrice: 0,
         floorRate: 0,
         additionalServices: 0,
+        specialItems: 0,
         water: 0,
         electricity: 0
       }
@@ -61,6 +52,20 @@ export const calculateTotalPrice = (
     });
   }
 
+  // คำนวณค่ารายการพิเศษ (จากผู้เช่าแทนที่จะเป็นจากห้องพัก)
+  let specialItems = 0;
+  if (tenant?.specialItems?.length) {
+    tenant.specialItems.forEach(item => {
+      // ตรวจสอบว่ารายการนี้ยังอยู่ในช่วงที่ต้องจ่ายหรือไม่
+      const isActive = item.duration === 0 || // ไม่มีกำหนด
+                       (item.remainingBillingCycles !== undefined && item.remainingBillingCycles > 0); // ยังเหลือรอบบิลที่ต้องจ่าย
+      
+      if (isActive) {
+        specialItems += item.amount;
+      }
+    });
+  }
+
   // คำนวณค่าน้ำ
   let water = 0;
   if (tenant?.numberOfResidents && config.additionalFees.utilities.water.perPerson) {
@@ -73,12 +78,15 @@ export const calculateTotalPrice = (
     electricity = tenant.electricityUsage.unitsUsed * config.additionalFees.utilities.electric.unit;
   }
 
+  const total = basePrice + floorRate + additionalServices + specialItems + water + electricity;
+
   return {
-    total: basePrice + floorRate + additionalServices + water + electricity,
+    total,
     breakdown: {
       basePrice,
       floorRate,
       additionalServices,
+      specialItems,
       water,
       electricity
     }

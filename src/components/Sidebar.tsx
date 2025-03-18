@@ -17,7 +17,9 @@ import {
   Zap,
   FileText,
   Smartphone,
-  Monitor
+  Monitor,
+  Receipt,
+  MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/contexts/ThemeContext";
@@ -47,7 +49,7 @@ export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: Si
   const { isMobileMode, toggleMobileMode } = useTheme();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([
     // เปิดเมนูย่อยอัตโนมัติถ้าอยู่ในหน้าย่อยนั้นๆ
-    ...(['tenants', 'tenants/history'].some(path => pathname?.includes(path)) ? ['ผู้เช่า'] : [])
+    ...(['tenants', 'tenants/history', 'dormitories/[id]/tenant-history', 'dormitories/[id]/bill-history'].some(path => pathname?.includes(path)) ? ['ผู้เช่า', 'หอพัก'] : [])
   ]);
 
   const navigation: MenuItem[] = [
@@ -76,30 +78,30 @@ export default function Sidebar({ isCollapsed, onToggle, onMobileItemClick }: Si
           icon: Users
         },
         {
-          name: "บิลหอพัก",
-          href: "/dormitories/bills",
-          current: pathname?.includes('/dormitories/bills'),
-          icon: FileText
+          name: "ประวัติผู้เช่า",
+          href: pathname?.includes('/dormitories/') ? `/dormitories/${pathname.split('/')[2]}/tenant-history` : "/tenants/history",
+          current: pathname === "/tenants/history" || pathname?.includes('/tenant-history'),
+          icon: History
         },
         {
-          name: "จดมิเตอร์ไฟ",
-          href: "/dormitories/meter-reading",
-          current: pathname === "/dormitories/meter-reading",
-          icon: Zap
+          name: "บิล",
+          href: pathname?.includes('/dormitories/') ? `/dormitories/${pathname.split('/')[2]}/bills` : "/bills",
+          current: pathname === "/bills" || pathname?.includes('/bills'),
+          icon: Receipt
         },
         {
-          name: "แจ้งทุจริต",
-          href: "/dormitories/fraud-reports",
-          current: pathname === "/dormitories/fraud-reports",
-          icon: AlertTriangle
-        },
-        {
-          name: "ประวัติผู้เช่าเก่า",
-          href: "/tenants/history",
-          current: pathname === "/tenants/history",
+          name: "ประวัติบิล",
+          href: pathname?.includes('/dormitories/') ? `/dormitories/${pathname.split('/')[2]}/bill-history` : "/bills/history",
+          current: pathname === "/bills/history" || pathname?.includes('/bill-history'),
           icon: History
         },
       ],
+    },
+    {
+      name: "Line Chat",
+      href: "/line-chat",
+      icon: MessageCircle,
+      current: pathname === "/line-chat",
     },
     {
       name: "ตั้งค่า",

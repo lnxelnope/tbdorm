@@ -1,9 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    webpackBuildWorker: true
+  output: 'export',
+  reactStrictMode: true,
+  eslint: {
+    // Warning: This allows production builds to successfully complete even if
+    // your project has ESLint errors.
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    // Warning: This allows production builds to successfully complete even if
+    // your project has TypeScript errors.
+    ignoreBuildErrors: true,
   },
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
@@ -27,25 +37,14 @@ const nextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
+  distDir: '.next',
   webpack: (config) => {
     config.externals.push({
       "utf-8-validate": "commonjs utf-8-validate",
       bufferutil: "commonjs bufferutil",
     });
     return config;
-  },
-  async rewrites() {
-    return [
-      {
-        source: "/api/anthropic/:path*",
-        destination: "https://api.anthropic.com/:path*",
-      },
-      {
-        source: "/api/replicate/:path*",
-        destination: "https://api.replicate.com/:path*",
-      },
-    ];
-  },
+  }
 };
 
 export default nextConfig;

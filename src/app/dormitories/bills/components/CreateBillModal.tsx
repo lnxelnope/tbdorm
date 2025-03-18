@@ -31,7 +31,7 @@ export default function CreateBillModal({
     setIsSubmitting(true);
 
     try {
-      const result = await createBill(dormitoryId, {
+      const billData = {
         dormitoryId,
         roomNumber: selectedRoom?.number || '',
         tenantId: selectedRoom?.tenantId || '',
@@ -50,14 +50,33 @@ export default function CreateBillModal({
           reminder: false,
           overdue: false
         }
-      });
+      };
+
+      // ลองสร้างบิลแบบปกติก่อน
+      const result = await createBill(dormitoryId, billData, false);
 
       if (result.success) {
         toast.success('สร้างบิลเรียบร้อยแล้ว');
         onSuccess();
         onClose();
       } else {
-        toast.error(result.error?.toString() || 'ไม่สามารถสร้างบิลได้');
+        // ถ้าเกิดข้อผิดพลาดเกี่ยวกับบิลซ้ำ ให้ถามผู้ใช้ว่าต้องการสร้างบิลซ้ำหรือไม่
+        if (result.error?.toString().includes('มีบิลสำหรับห้อง')) {
+          if (window.confirm(`${result.error} ต้องการสร้างบิลซ้ำหรือไม่?`)) {
+            // ถ้าผู้ใช้ยืนยัน ให้สร้างบิลซ้ำโดยส่ง forceCreate เป็น true
+            const forceResult = await createBill(dormitoryId, billData, true);
+            
+            if (forceResult.success) {
+              toast.success('สร้างบิลเรียบร้อยแล้ว');
+              onSuccess();
+              onClose();
+            } else {
+              toast.error(forceResult.error?.toString() || 'ไม่สามารถสร้างบิลได้');
+            }
+          }
+        } else {
+          toast.error(result.error?.toString() || 'ไม่สามารถสร้างบิลได้');
+        }
       }
     } catch (error) {
       console.error('Error creating bill:', error);

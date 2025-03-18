@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Tenant } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import Modal from "@/components/ui/modal";
 import { getTenant } from "@/lib/firebase/firebaseUtils";
 
@@ -90,7 +90,43 @@ export default function TenantDetailsModal({
                 <h3 className="text-sm font-medium text-gray-500">ยอดค้างชำระ</h3>
                 <p className="mt-1 text-sm text-gray-900">{tenant.outstandingBalance?.toLocaleString() || "0"} บาท</p>
               </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-500">เงินประกัน</h3>
+                <p className="mt-1 text-sm text-gray-900">{tenant.deposit?.toLocaleString() || "0"} บาท</p>
+              </div>
             </div>
+
+            {tenant.specialItems && tenant.specialItems.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-2">รายการพิเศษ</h3>
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">รายการ</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">จำนวนเงิน</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ระยะเวลา</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">รอบที่เหลือ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tenant.specialItems.map((item, index) => (
+                        <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{item.name}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">{item.amount.toLocaleString()} บาท</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                            {item.duration === 0 ? 'ไม่มีกำหนด' : `${item.duration} รอบ`}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                            {item.duration === 0 ? '-' : (item.remainingBillingCycles !== undefined ? item.remainingBillingCycles : item.duration)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <div>
               <h3 className="text-sm font-medium text-gray-500">หมายเหตุ</h3>
@@ -102,7 +138,7 @@ export default function TenantDetailsModal({
               <div className="mt-1">
                 {tenant.documents && tenant.documents.length > 0 ? (
                   <ul className="space-y-2">
-                    {tenant.documents.map((doc, index) => (
+                    {tenant.documents.map((doc: any, index: number) => (
                       <li key={index} className="text-sm text-blue-600 hover:text-blue-800">
                         <a href={doc.url} target="_blank" rel="noopener noreferrer">
                           {doc.name}

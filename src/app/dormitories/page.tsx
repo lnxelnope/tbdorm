@@ -235,6 +235,45 @@ export default function DormitoriesPage() {
                   </Link>
                 </div>
               </div>
+
+              <div className="flex space-x-2 mt-4">
+                <Link
+                  href={`/dormitories/${dormitory.id}/rooms`}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100"
+                >
+                  <Home className="w-3.5 h-3.5 mr-1" />
+                  ห้องพัก
+                </Link>
+                <Link
+                  href={`/dormitories/${dormitory.id}/config`}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-gray-50 text-gray-700 hover:bg-gray-100"
+                >
+                  <Settings className="w-3.5 h-3.5 mr-1" />
+                  ตั้งค่า
+                </Link>
+                <Link
+                  href={`/dormitories/${dormitory.id}/bill-template`}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-green-50 text-green-700 hover:bg-green-100"
+                >
+                  <Layers className="w-3.5 h-3.5 mr-1" />
+                  รูปแบบบิล
+                </Link>
+                <Link
+                  href={`/dormitories/edit/${dormitory.id}`}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100"
+                >
+                  <Edit className="w-3.5 h-3.5 mr-1" />
+                  แก้ไข
+                </Link>
+                <button
+                  onClick={() => handleDelete(dormitory.id)}
+                  disabled={isDeleting}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  ลบ
+                </button>
+              </div>
             </div>
           </div>
         ))}

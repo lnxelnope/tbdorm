@@ -4,18 +4,19 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { Bill, Room, Tenant, RoomType } from "@/types/dormitory";
+import { Bill, Room, RoomType } from "@/types/dormitory";
+import { Tenant } from "@/types/tenant";
 import { toast } from "sonner";
 import {
   getBills,
   addPayment,
   getPromptPayConfig,
   getLineNotifyConfig,
-  createBill,
   getRooms,
   queryTenants,
   getRoomTypes,
 } from "@/lib/firebase/firebaseUtils";
+import { createBill } from "@/lib/firebase/billUtils";
 import { sendBillCreatedNotification } from "@/lib/notifications/lineNotify";
 
 interface BillItem {
@@ -122,9 +123,13 @@ const handleSubmit = async (e: React.FormEvent) => {
       tenantId: tenant.id,
       month: formData.month,
       year: formData.year,
-      dueDate: new Date(formData.dueDate).toISOString(),
+      dueDate: formData.dueDate,
       status: "pending" as const,
-      items: formData.items,
+      items: formData.items.map(item => ({
+        name: item.name,
+        amount: item.amount,
+        description: item.description
+      })),
       totalAmount,
       paidAmount: 0,
       remainingAmount: totalAmount,

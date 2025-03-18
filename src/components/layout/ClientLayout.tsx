@@ -1,36 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import Sidebar from "@/components/Sidebar";
+import { Sidebar } from "./Sidebar";
+import { MobileNav } from "./MobileNav";
 import { ThemeProvider } from "@/lib/contexts/ThemeContext";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/toaster";
 
 export default function ClientLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    const savedState = localStorage.getItem("sidebarCollapsed");
+    if (savedState) {
+      setIsCollapsed(JSON.parse(savedState));
+    }
+  }, []);
+
+  const handleToggle = () => {
+    setIsCollapsed(!isCollapsed);
+  };
 
   return (
     <ThemeProvider>
       <div className="flex h-screen">
-        <div className={cn(
-          "fixed inset-y-0 z-50 transition-transform duration-300 md:relative md:translate-x-0",
-          isSidebarCollapsed ? "-translate-x-full" : "translate-x-0"
-        )}>
-          <Sidebar 
-            isCollapsed={isSidebarCollapsed}
-            onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            onMobileItemClick={() => setIsSidebarCollapsed(true)}
-          />
+        {/* Desktop Sidebar */}
+        <Sidebar 
+          className="hidden md:flex md:flex-col" 
+          isCollapsed={isCollapsed} 
+          onToggle={handleToggle} 
+        />
+        
+        {/* Mobile Navigation */}
+        <div className="fixed top-0 left-0 right-0 z-40 flex items-center h-16 px-4 bg-white border-b md:hidden">
+          <MobileNav />
+          <div className="ml-4 text-lg font-semibold">TB Dorm</div>
         </div>
-        <main className="flex-1 overflow-y-auto bg-gray-50 w-full">
+        
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto pt-16 md:pt-0">
           {children}
         </main>
       </div>
-      <Toaster richColors position="top-right" />
+      <Toaster />
     </ThemeProvider>
   );
 } 

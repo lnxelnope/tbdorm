@@ -1,29 +1,29 @@
 export interface Bill {
   id: string;
   dormitoryId: string;
+  roomId: string;
   roomNumber: string;
   tenantId: string;
   tenantName: string;
   month: number;
   year: number;
-  dueDate: Date;
-  status: 'pending' | 'paid' | 'overdue' | 'partially_paid';
+  dueDate: string | Date;
+  createdAt: string | Date;
+  status: 'pending' | 'paid' | 'partially_paid' | 'overdue' | 'cancelled';
   items: BillItem[];
   totalAmount: number;
   paidAmount: number;
-  remainingAmount: number;
-  createdAt: Date;
-  updatedAt: Date;
   payments: Payment[];
-  notificationsSent: number;
+  notes?: string;
 }
 
 export interface BillItem {
-  type: 'rent' | 'water' | 'electric' | 'other';
+  id?: string;
   name: string;
+  type: 'rent' | 'water' | 'electric' | 'other';
   amount: number;
   unit?: number;
-  rate?: number;
+  price?: number;
   description?: string;
 }
 
@@ -76,14 +76,13 @@ export interface BankAccount {
 }
 
 export interface Payment {
-  id: string;
+  id?: string;
   amount: number;
-  method: 'cash' | 'transfer' | 'promptpay';
-  status: 'pending' | 'completed' | 'failed';
-  receiptUrl?: string;
-  paidAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  method: string;
+  date: string | Date;
+  recordedBy?: string;
+  createdBy?: string;
+  createdAt?: string | Date;
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'promptpay';
