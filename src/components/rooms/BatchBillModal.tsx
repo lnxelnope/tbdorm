@@ -40,6 +40,7 @@ export default function BatchBillModal({
 }: BatchBillModalProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [billDate, setBillDate] = useState<Date>(new Date());
   const [dueDate, setDueDate] = useState<Date | undefined>(
     new Date(new Date().setDate(new Date().getDate() + 7))
   );
@@ -52,6 +53,15 @@ export default function BatchBillModal({
   const [otherFees, setOtherFees] = useState<{ name: string; amount: number }[]>([
     { name: "", amount: 0 }
   ]);
+
+  const generateBillNumber = () => {
+    const now = new Date();
+    const year = now.getFullYear().toString().substring(2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `INV${year}${month}${day}${random}`;
+  };
 
   const addOtherFee = () => {
     setOtherFees([...otherFees, { name: "", amount: 0 }]);
@@ -88,130 +98,103 @@ export default function BatchBillModal({
     try {
       setIsLoading(true);
       
-      // ใช้ข้อมูลห้องพักที่ส่งมาแทนการดึงข้อมูลใหม่
-      const roomsData = selectedRooms;
+      // สร้าง array สำหรับเก็บข้อมูลบิลที่จะสร้าง
+      const createdBills: any[] = [];
       
-      const createdBills = [];
-      
-      // สร้างบิลสำหรับแต่ละห้อง
-      for (const room of roomsData) {
-        const tenant = tenants.find(t => t.roomNumber === room.number);
-        if (!tenant) {
-          continue; // ข้ามห้องที่ไม่มีผู้เช่า
+      // สร้างบิลสำหรับแต่ละห้องที่เลือก
+      selectedRooms.forEach(room => {
+        // หาผู้เช่าในห้องที่เลือก
+        const roomTenants = tenants.filter(tenant => tenant.roomId === room.id && tenant.active);
+        
+        // หาข้อมูลประเภทห้อง
+        const roomType = roomTypes.find(rt => rt.id === room.roomTypeId);
+        
+        if (roomTenants.length === 0) {
+          toast.warning(`ห้อง ${room.roomNumber} ไม่มีผู้เช่าที่เปิดใช้งาน`);
+          return;
         }
         
-        const roomType = roomTypes.find(rt => rt.id === room.roomType);
         if (!roomType) {
-          continue; // ข้ามห้องที่ไม่มีข้อมูลประเภทห้อง
+          toast.warning(`ห้อง ${room.roomNumber} ไม่พบข้อมูลประเภทห้อง`);
+          return;
         }
         
-        // คำนวณค่าใช้จ่าย
-        let totalAmount = 0;
-        const items = [];
-        
-        // ค่าเช่า
-        if (includeRent && roomType.basePrice) {
-          totalAmount += roomType.basePrice;
-          items.push({
+        // สร้างรายการค่าใช้จ่าย
+        const items = [
+          {
             name: "ค่าเช่าห้อง",
-            type: "rent",
-            amount: roomType.basePrice,
-            description: `ค่าเช่าห้อง ${room.number}`,
-            unitPrice: roomType.basePrice,
-            units: 1
-          });
-        }
+            amount: roomType.rentFee,
+            type: "RENT"
+          }
+        ];
         
-        // ค่าบริการเพิ่มเติม
-        if (includeAdditionalServices && room.additionalServices && room.additionalServices.length > 0) {
-          room.additionalServices.forEach(serviceId => {
-            const service = dormitoryConfig.additionalFees?.items.find(item => item.id === serviceId);
-            if (service) {
-              items.push({
-                name: service.name,
-                type: "additional_fee",
-                amount: service.amount,
-                description: service.name,
-                unitPrice: service.amount,
-                units: 1
-              });
-            }
-          });
-        }
-        
-        // ค่าน้ำ
-        if (includeWater && tenant.numberOfResidents && dormitoryConfig.additionalFees?.utilities?.water?.perPerson) {
-          const waterAmount = tenant.numberOfResidents * dormitoryConfig.additionalFees.utilities.water.perPerson;
-          items.push({
-            name: "ค่าน้ำ",
-            type: "water",
-            amount: waterAmount,
-            description: `ค่าน้ำ (${tenant.numberOfResidents} คน)`,
-            unitPrice: dormitoryConfig.additionalFees.utilities.water.perPerson,
-            units: tenant.numberOfResidents
-          });
-        }
-        
-        // ค่าไฟ
-        if (includeElectricity && tenant.electricityUsage) {
-          const unitsUsed = typeof tenant.electricityUsage === 'number' 
-            ? tenant.electricityUsage 
-            : tenant.electricityUsage.unitsUsed || 0;
-          
-          if (unitsUsed > 0 && dormitoryConfig.additionalFees?.utilities?.electric?.unit) {
-            const electricAmount = unitsUsed * dormitoryConfig.additionalFees.utilities.electric.unit;
+        // คำนวณค่าน้ำ
+        if (includeWater) {
+          if (room.waterMeterStartUnit !== undefined && room.waterMeterEndUnit !== undefined) {
+            const waterUnitsUsed = room.waterMeterEndUnit - room.waterMeterStartUnit;
+            const waterFee = waterUnitsUsed * (dormitoryConfig?.waterFeePerUnit || 0);
+            
             items.push({
-              name: "ค่าไฟฟ้า",
-              type: "electric",
-              amount: electricAmount,
-              description: `ค่าไฟฟ้า (${unitsUsed} หน่วย)`,
-              unitPrice: dormitoryConfig.additionalFees.utilities.electric.unit,
-              units: unitsUsed
+              name: "ค่าน้ำ",
+              amount: waterFee,
+              type: "WATER",
+              detail: `${waterUnitsUsed} หน่วย (${room.waterMeterStartUnit}-${room.waterMeterEndUnit})`
+            });
+          } else {
+            items.push({
+              name: "ค่าน้ำเหมาจ่าย",
+              amount: dormitoryConfig?.waterFeeFixedRate || 0,
+              type: "WATER",
+              detail: "เหมาจ่าย"
             });
           }
         }
         
-        // ค่าใช้จ่ายอื่นๆ
+        // คำนวณค่าไฟ
+        if (includeElectricity) {
+          if (room.electricityMeterStartUnit !== undefined && room.electricityMeterEndUnit !== undefined) {
+            const electricityUnitsUsed = room.electricityMeterEndUnit - room.electricityMeterStartUnit;
+            const electricityFee = electricityUnitsUsed * (dormitoryConfig?.electricityFeePerUnit || 0);
+            
+            items.push({
+              name: "ค่าไฟ",
+              amount: electricityFee,
+              type: "ELECTRICITY",
+              detail: `${electricityUnitsUsed} หน่วย (${room.electricityMeterStartUnit}-${room.electricityMeterEndUnit})`
+            });
+          } else {
+            items.push({
+              name: "ค่าไฟเหมาจ่าย",
+              amount: dormitoryConfig?.electricityFeeFixedRate || 0,
+              type: "ELECTRICITY",
+              detail: "เหมาจ่าย"
+            });
+          }
+        }
+        
+        // เพิ่มค่าใช้จ่ายอื่นๆ
         otherFees.forEach(fee => {
-          if (fee.name && fee.amount > 0) {
+          if (fee.name && fee.amount) {
             items.push({
               name: fee.name,
-              type: "other",
-              amount: fee.amount,
-              description: fee.name,
-              unitPrice: fee.amount,
-              units: 1
+              amount: Number(fee.amount),
+              type: "OTHER"
             });
           }
         });
         
         // คำนวณยอดรวม
-        const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+        const totalAmount = items.reduce((sum, item) => sum + Number(item.amount), 0);
         
-        // ใช้วันที่ออกบิลจาก config ถ้ามี
-        const now = new Date();
-        const month = now.getMonth() + 1;
-        const year = now.getFullYear();
-        
-        // ตรวจสอบว่ามีการกำหนดวันครบกำหนดชำระใน config หรือไม่
-        let billDueDate = dueDate;
-        if (dormitoryConfig.billing?.dueDate) {
-          // ถ้ามีการกำหนดวันครบกำหนดชำระใน config ให้ใช้วันนั้น
-          const configDueDate = dormitoryConfig.billing.dueDate;
-          const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, configDueDate);
-          billDueDate = nextMonth;
-        }
-        
-        return {
+        // เพิ่มข้อมูลบิลเข้า array
+        createdBills.push({
           dormitoryId: dormitoryId,
           roomId: room.id,
-          roomNumber: room.number,
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          month,
-          year,
-          dueDate: billDueDate,
-          status: "pending" as const,
+          tenantId: roomTenants[0]?.id || null,
+          billDate: new Date(),
+          dueDate: dueDate,
+          status: "UNPAID",
+          billNumber: generateBillNumber(),
           items,
           totalAmount,
           paidAmount: 0,
@@ -222,37 +205,36 @@ export default function BatchBillModal({
             reminder: false,
             overdue: false
           }
-        };
-      }).filter(bill => bill !== null);
+        });
+      });
       
       // ใช้ createBills จาก billUtils.ts
-      const result = await createBills(dormitoryId, billsToCreate as any, false);
+      const result = await createBills(dormitoryId, createdBills as any, false);
       
       if (result.success) {
         toast.success(`สร้างบิลสำเร็จ ${result.data?.length || 0} รายการ`);
         onSuccess();
         onClose();
       } else {
-        // ถ้าเป็นข้อผิดพลาดเกี่ยวกับบิลซ้ำ
-        if (result.error?.toString().includes('มีบิลสำหรับห้อง')) {
+        if (result.error === "มีบิลซ้ำในเดือนที่เลือก") {
           if (window.confirm(`${result.error} ต้องการสร้างบิลซ้ำหรือไม่?`)) {
             // สร้างบิลใหม่โดยบังคับสร้าง
-            const forceResult = await createBills(dormitoryId, billsToCreate as any, true);
+            const forceResult = await createBills(dormitoryId, createdBills as any, true);
             
             if (forceResult.success) {
               toast.success(`สร้างบิลสำเร็จ ${forceResult.data?.length || 0} รายการ`);
               onSuccess();
               onClose();
             } else {
-              toast.error(`เกิดข้อผิดพลาดในการสร้างบิล: ${forceResult.error}`);
+              toast.error(`ไม่สามารถสร้างบิลได้: ${forceResult.error}`);
             }
           }
         } else {
-          toast.error(`เกิดข้อผิดพลาดในการสร้างบิล: ${result.error}`);
+          toast.error(`ไม่สามารถสร้างบิลได้: ${result.error}`);
         }
       }
     } catch (error) {
-      console.error("Error generating bills:", error);
+      console.error("เกิดข้อผิดพลาดในการสร้างบิล:", error);
       toast.error("เกิดข้อผิดพลาดในการสร้างบิล");
     } finally {
       setIsLoading(false);
@@ -267,85 +249,49 @@ export default function BatchBillModal({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="dueDate">วันครบกำหนดชำระ</Label>
-            <DatePicker
-              id="dueDate"
-              selected={dueDate}
-              onSelect={setDueDate}
-              disabled={isLoading}
-              locale={th}
-              className="w-full"
-            />
-          </div>
-          
-          <div className="space-y-2">
-            <Label>รายการที่ต้องการเรียกเก็บ</Label>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeRent"
-                  checked={includeRent}
-                  onCheckedChange={(checked) => setIncludeRent(checked as boolean)}
-                  disabled={isLoading}
-                />
-                <Label htmlFor="includeRent" className="cursor-pointer">ค่าเช่าห้อง</Label>
+          <div className="grid">
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="billDate">วันที่ออกบิล</Label>
+                <DatePicker date={billDate} setDate={setBillDate} className="w-full" />
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeAdditionalServices"
-                  checked={includeAdditionalServices}
-                  onCheckedChange={(checked) => setIncludeAdditionalServices(checked as boolean)}
-                  disabled={isLoading}
-                />
-                <Label htmlFor="includeAdditionalServices" className="cursor-pointer">ค่าบริการเพิ่มเติม</Label>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate">วันครบกำหนดชำระ</Label>
+                <DatePicker date={dueDate} setDate={setDueDate} className="w-full" />
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeWater"
-                  checked={includeWater}
-                  onCheckedChange={(checked) => setIncludeWater(checked as boolean)}
-                  disabled={isLoading}
-                />
-                <Label htmlFor="includeWater" className="cursor-pointer">ค่าน้ำ</Label>
-                {includeWater && (
-                  <div className="flex items-center ml-4">
-                    <Input
-                      type="number"
-                      value={waterRate}
-                      onChange={(e) => setWaterRate(Number(e.target.value))}
-                      className="w-20"
-                      min={0}
-                      disabled={isLoading}
-                    />
-                    <span className="ml-2">บาท/หน่วย</span>
-                  </div>
-                )}
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="includeRent"
+                    checked={includeRent}
+                    onCheckedChange={setIncludeRent}
+                  />
+                  <Label htmlFor="includeRent">รวมค่าเช่า</Label>
+                </div>
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeElectricity"
-                  checked={includeElectricity}
-                  onCheckedChange={(checked) => setIncludeElectricity(checked as boolean)}
-                  disabled={isLoading}
-                />
-                <Label htmlFor="includeElectricity" className="cursor-pointer">ค่าไฟ</Label>
-                {includeElectricity && (
-                  <div className="flex items-center ml-4">
-                    <Input
-                      type="number"
-                      value={electricityRate}
-                      onChange={(e) => setElectricityRate(Number(e.target.value))}
-                      className="w-20"
-                      min={0}
-                      disabled={isLoading}
-                    />
-                    <span className="ml-2">บาท/หน่วย</span>
-                  </div>
-                )}
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="includeWater"
+                    checked={includeWater}
+                    onCheckedChange={setIncludeWater}
+                  />
+                  <Label htmlFor="includeWater">รวมค่าน้ำ</Label>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="includeElectricity"
+                    checked={includeElectricity}
+                    onCheckedChange={setIncludeElectricity}
+                  />
+                  <Label htmlFor="includeElectricity">รวมค่าไฟ</Label>
+                </div>
               </div>
             </div>
           </div>
