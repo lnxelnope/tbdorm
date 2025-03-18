@@ -138,14 +138,14 @@ export default function BatchBillModal({
               name: "ค่าน้ำ",
               amount: waterFee,
               type: "WATER",
-              detail: `${waterUnitsUsed} หน่วย (${room.waterMeterStartUnit}-${room.waterMeterEndUnit})`
+              description: `${waterUnitsUsed} หน่วย (${room.waterMeterStartUnit}-${room.waterMeterEndUnit})`
             });
           } else {
             items.push({
               name: "ค่าน้ำเหมาจ่าย",
               amount: dormitoryConfig?.waterFeeFixedRate || 0,
               type: "WATER",
-              detail: "เหมาจ่าย"
+              description: "เหมาจ่าย"
             });
           }
         }
@@ -160,14 +160,14 @@ export default function BatchBillModal({
               name: "ค่าไฟ",
               amount: electricityFee,
               type: "ELECTRICITY",
-              detail: `${electricityUnitsUsed} หน่วย (${room.electricityMeterStartUnit}-${room.electricityMeterEndUnit})`
+              description: `${electricityUnitsUsed} หน่วย (${room.electricityMeterStartUnit}-${room.electricityMeterEndUnit})`
             });
           } else {
             items.push({
               name: "ค่าไฟเหมาจ่าย",
               amount: dormitoryConfig?.electricityFeeFixedRate || 0,
               type: "ELECTRICITY",
-              detail: "เหมาจ่าย"
+              description: "เหมาจ่าย"
             });
           }
         }
