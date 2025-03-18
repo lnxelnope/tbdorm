@@ -45,15 +45,13 @@ export default function BatchBillModal({
     new Date(new Date().setDate(new Date().getDate() + 7))
   );
   const [includeRent, setIncludeRent] = useState(true);
-  const [includeAdditionalServices, setIncludeAdditionalServices] = useState(true);
   const [includeWater, setIncludeWater] = useState(true);
   const [includeElectricity, setIncludeElectricity] = useState(true);
-  const [waterRate, setWaterRate] = useState(18);
-  const [electricityRate, setElectricityRate] = useState(8);
   const [otherFees, setOtherFees] = useState<{ name: string; amount: number }[]>([
     { name: "", amount: 0 }
   ]);
-
+  
+  // ฟังก์ชันสร้างเลขที่บิล
   const generateBillNumber = () => {
     const now = new Date();
     const year = now.getFullYear().toString().substring(2);
@@ -62,20 +60,21 @@ export default function BatchBillModal({
     const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `INV${year}${month}${day}${random}`;
   };
-
+  
   const addOtherFee = () => {
     setOtherFees([...otherFees, { name: "", amount: 0 }]);
   };
-
-  const updateOtherFee = (index: number, field: "name" | "amount", value: string | number) => {
+  
+  const updateOtherFee = (index: number, field: keyof typeof otherFees[0], value: string | number) => {
     const updatedFees = [...otherFees];
-    updatedFees[index] = {
-      ...updatedFees[index],
-      [field]: value
-    };
+    if (field === 'amount') {
+      updatedFees[index][field] = Number(value);
+    } else {
+      updatedFees[index][field] = value as string;
+    }
     setOtherFees(updatedFees);
   };
-
+  
   const removeOtherFee = (index: number) => {
     const updatedFees = [...otherFees];
     updatedFees.splice(index, 1);
@@ -191,7 +190,7 @@ export default function BatchBillModal({
           dormitoryId: dormitoryId,
           roomId: room.id,
           tenantId: roomTenants[0]?.id || null,
-          billDate: new Date(),
+          billDate: billDate || new Date(),
           dueDate: dueDate,
           status: "UNPAID",
           billNumber: generateBillNumber(),
@@ -209,7 +208,7 @@ export default function BatchBillModal({
       });
       
       // ใช้ createBills จาก billUtils.ts
-      const result = await createBills(dormitoryId, createdBills as any, false);
+      const result = await createBills(dormitoryId, createdBills, false);
       
       if (result.success) {
         toast.success(`สร้างบิลสำเร็จ ${result.data?.length || 0} รายการ`);
@@ -219,7 +218,7 @@ export default function BatchBillModal({
         if (result.error === "มีบิลซ้ำในเดือนที่เลือก") {
           if (window.confirm(`${result.error} ต้องการสร้างบิลซ้ำหรือไม่?`)) {
             // สร้างบิลใหม่โดยบังคับสร้าง
-            const forceResult = await createBills(dormitoryId, createdBills as any, true);
+            const forceResult = await createBills(dormitoryId, createdBills, true);
             
             if (forceResult.success) {
               toast.success(`สร้างบิลสำเร็จ ${forceResult.data?.length || 0} รายการ`);
@@ -243,121 +242,130 @@ export default function BatchBillModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>สร้างบิลแบบหลายรายการ</DialogTitle>
+          <DialogTitle>สร้างบิลแบบกลุ่ม</DialogTitle>
         </DialogHeader>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid">
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label htmlFor="billDate">วันที่ออกบิล</Label>
-                <DatePicker date={billDate} setDate={setBillDate} className="w-full" />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="dueDate">วันครบกำหนดชำระ</Label>
-                <DatePicker date={dueDate} setDate={setDueDate} className="w-full" />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="includeRent"
-                    checked={includeRent}
-                    onCheckedChange={setIncludeRent}
-                  />
-                  <Label htmlFor="includeRent">รวมค่าเช่า</Label>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="includeWater"
-                    checked={includeWater}
-                    onCheckedChange={setIncludeWater}
-                  />
-                  <Label htmlFor="includeWater">รวมค่าน้ำ</Label>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="includeElectricity"
-                    checked={includeElectricity}
-                    onCheckedChange={setIncludeElectricity}
-                  />
-                  <Label htmlFor="includeElectricity">รวมค่าไฟ</Label>
-                </div>
+        <div className="grid">
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="billDate">วันที่ออกบิล</Label>
+              <DatePicker date={billDate} setDate={setBillDate} className="w-full" />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="dueDate">วันครบกำหนดชำระ</Label>
+              <DatePicker date={dueDate} setDate={setDueDate} className="w-full" />
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="includeRent"
+                  checked={includeRent}
+                  onCheckedChange={setIncludeRent}
+                />
+                <Label htmlFor="includeRent">รวมค่าเช่า</Label>
               </div>
             </div>
-          </div>
-          
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="includeWater"
+                  checked={includeWater}
+                  onCheckedChange={setIncludeWater}
+                />
+                <Label htmlFor="includeWater">รวมค่าน้ำ</Label>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="includeElectricity"
+                  checked={includeElectricity}
+                  onCheckedChange={setIncludeElectricity}
+                />
+                <Label htmlFor="includeElectricity">รวมค่าไฟ</Label>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
               <Label>ค่าใช้จ่ายอื่นๆ</Label>
+              
+              {otherFees.map((fee, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    placeholder="ชื่อรายการ"
+                    value={fee.name}
+                    onChange={(e) => updateOtherFee(index, 'name', e.target.value)}
+                    disabled={isLoading}
+                    className="flex-grow"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="จำนวนเงิน"
+                    value={fee.amount || ''}
+                    onChange={(e) => updateOtherFee(index, 'amount', e.target.value)}
+                    disabled={isLoading}
+                    className="w-32"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeOtherFee(index)}
+                    disabled={isLoading}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
                 onClick={addOtherFee}
                 disabled={isLoading}
               >
                 เพิ่มรายการ
               </Button>
             </div>
-            
-            {otherFees.map((fee, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Input
-                  placeholder="ชื่อรายการ"
-                  value={fee.name}
-                  onChange={(e) => updateOtherFee(index, "name", e.target.value)}
-                  className="flex-1"
-                  disabled={isLoading}
-                />
-                <Input
-                  type="number"
-                  placeholder="จำนวนเงิน"
-                  value={fee.amount}
-                  onChange={(e) => updateOtherFee(index, "amount", Number(e.target.value))}
-                  className="w-24"
-                  min={0}
-                  disabled={isLoading}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeOtherFee(index)}
-                  disabled={isLoading || otherFees.length === 1}
-                >
-                  ✕
-                </Button>
+          </div>
+        </div>
+        
+        <div className="mt-4">
+          <p className="text-sm text-gray-500 mb-4">
+            ห้องที่เลือก: {selectedRooms.length} ห้อง
+          </p>
+          
+          <div className="grid grid-cols-3 gap-2">
+            {selectedRooms.map((room) => (
+              <div key={room.id} className="text-sm p-2 border rounded">
+                {room.roomNumber}
               </div>
             ))}
           </div>
-          
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
-              ยกเลิก
-            </Button>
-            <Button
-              type="submit"
-              disabled={isLoading}
-            >
-              {isLoading ? "กำลังสร้างบิล..." : "สร้างบิล"}
-            </Button>
-          </DialogFooter>
-        </form>
+        </div>
+        
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isLoading}
+          >
+            ยกเลิก
+          </Button>
+          <Button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={isLoading}
+          >
+            {isLoading ? "กำลังสร้างบิล..." : "สร้างบิล"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
