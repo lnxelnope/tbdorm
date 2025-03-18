@@ -15,11 +15,27 @@ interface TotalPriceResult {
 
 export const calculateTotalPrice = (
   room: Room, 
-  config: DormitoryConfig,
+  config: DormitoryConfig | null,
   tenant?: Tenant | null
 ): TotalPriceResult => {
+  // ตรวจสอบว่า config ไม่เป็น null หรือ undefined
+  if (!config || !room) {
+    console.warn(`ไม่พบการตั้งค่าหอพักหรือข้อมูลห้องพัก`);
+    return {
+      total: 0,
+      breakdown: {
+        basePrice: 0,
+        floorRate: 0,
+        additionalServices: 0,
+        specialItems: 0,
+        water: 0,
+        electricity: 0
+      }
+    };
+  }
+
   // หา roomType จาก config ของหอพัก
-  const roomType = config.roomTypes[room.roomType];
+  const roomType = config.roomTypes?.[room.roomType];
   if (!roomType) {
     console.warn(`ไม่พบข้อมูลประเภทห้อง ${room.roomType} ในการตั้งค่าของหอพัก`);
     return {
@@ -36,7 +52,7 @@ export const calculateTotalPrice = (
   }
   
   // คำนวณราคาพื้นฐานจาก config ของหอพัก
-  const basePrice = roomType.basePrice;
+  const basePrice = roomType.basePrice || 0;
 
   // คำนวณค่าส่วนเพิ่มตามชั้น
   const floorRate = config?.additionalFees?.floorRates?.[room.floor.toString()] || 0;
@@ -45,7 +61,7 @@ export const calculateTotalPrice = (
   let additionalServices = 0;
   if (room.additionalServices?.length && config?.additionalFees?.items?.length) {
     room.additionalServices.forEach(serviceId => {
-      const service = config.additionalFees.items.find(item => item.id === serviceId);
+      const service = config.additionalFees?.items?.find(item => item.id === serviceId);
       if (service) {
         additionalServices += service.amount;
       }
@@ -68,13 +84,13 @@ export const calculateTotalPrice = (
 
   // คำนวณค่าน้ำ
   let water = 0;
-  if (tenant?.numberOfResidents && config.additionalFees.utilities.water.perPerson) {
+  if (tenant?.numberOfResidents && config?.additionalFees?.utilities?.water?.perPerson) {
     water = tenant.numberOfResidents * config.additionalFees.utilities.water.perPerson;
   }
 
   // คำนวณค่าไฟ
   let electricity = 0;
-  if (tenant?.electricityUsage?.unitsUsed && config.additionalFees.utilities.electric.unit) {
+  if (tenant?.electricityUsage?.unitsUsed && config?.additionalFees?.utilities?.electric?.unit) {
     electricity = tenant.electricityUsage.unitsUsed * config.additionalFees.utilities.electric.unit;
   }
 

@@ -19,6 +19,7 @@ interface EditRoomModalProps {
   onSuccess: (room: Room) => void;
   dormitoryId: string;
   totalFloors: number;
+  isOpen?: boolean;
 }
 
 interface FormData {
@@ -30,7 +31,7 @@ interface FormData {
   additionalServices: string[];
 }
 
-export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dormitoryId, totalFloors }: EditRoomModalProps) {
+export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dormitoryId, totalFloors, isOpen = true }: EditRoomModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allRooms, setAllRooms] = useState<Room[]>([]);
   const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
@@ -124,6 +125,8 @@ export default function EditRoomModal({ room, roomTypes, onClose, onSuccess, dor
         : prev.additionalServices.filter(id => id !== serviceId)
     }));
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50">

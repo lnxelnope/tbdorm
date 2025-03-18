@@ -83,34 +83,60 @@ export interface AdditionalFeeItem {
   id: string;
   name: string;
   amount: number;
+  isRequired: boolean;
 }
 
 export interface DormitoryConfig {
-  roomTypes: Record<string, RoomType>;
+  roomTypes: Record<string, RoomTypeConfig>;
   additionalFees: {
     utilities: {
-      water: {
+      water: { 
         perPerson: number | null;
+        unit?: number | null;
       };
-      electric: {
+      electric: { 
         unit: number | null;
       };
     };
     items: AdditionalFeeItem[];
-    floorRates: Record<string, number | null>;
+    floorRates: Record<string, number>;
   };
-  dueDate?: number;
-  createdAt?: any;
-  updatedAt?: any;
+}
+
+export interface RoomTypeConfig {
+  name: string;
+  basePrice: number;
+  description?: string;
+  additionalItems?: string[];
 }
 
 export interface Room {
   id: string;
   dormitoryId: string;
   number: string;
-  floor: number;
-  status: 'available' | 'occupied' | 'maintenance' | 'moving_out' | 'abnormal' | 'ready_for_billing' | 'pending_payment';
-  roomType: string;
+  floor: string;
+  status: string;
+  type: {
+    id: string;
+    name: string;
+    basePrice: number;
+  };
+  tenant?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+  };
+  waterMeter?: {
+    previous: number;
+    current: number;
+    lastUpdated?: any;
+  };
+  electricityMeter?: {
+    previous: number;
+    current: number;
+    lastUpdated?: any;
+  };
   rent?: number;
   initialMeterReading: number;
   additionalServices?: string[];
@@ -297,3 +323,19 @@ export const calculateTotalRent = (
 
   return totalRent;
 };
+
+export interface SortConfig {
+  key: string;
+  direction: 'asc' | 'desc';
+}
+
+export interface Filters {
+  floor: string;
+  status: string;
+  roomType: string;
+  priceRange: {
+    min: number;
+    max: number;
+  };
+  additionalServices: string[];
+}

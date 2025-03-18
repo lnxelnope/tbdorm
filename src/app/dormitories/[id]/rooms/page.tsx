@@ -43,6 +43,7 @@ import RentDetailsModal, { TotalPriceResult } from "@/components/rooms/RentDetai
 import TenantDetailsModal from "@/app/components/tenants/TenantDetailsModal";
 import BatchBillModal from "@/components/rooms/BatchBillModal";
 import { v4 as uuidv4 } from 'uuid';
+import { useDormitoryConfig } from "@/lib/hooks/useDormitoryConfig";
 
 interface SortConfig {
   key: 'number' | 'floor' | 'status' | 'roomType' | 'price';
@@ -128,12 +129,12 @@ function MeterReadingModal({ isOpen, onClose, room, tenant, dormitoryId, previou
     }
     
     // ตรวจสอบว่าเป็นห้องว่างหรือไม่ และค่ามิเตอร์เพิ่มขึ้นหรือไม่
-    if (!tenant && room.status === 'available') {
+    if (!tenant && room?.status === 'available') {
       setShouldMarkAbnormal(true);
     } else {
       setShouldMarkAbnormal(false);
     }
-  }, [previousReading, tenant, room.status]);
+  }, [previousReading, tenant, room?.status]);
 
   const unitsUsed = Math.max(0, currentReading - lastReading);
 
@@ -301,44 +302,49 @@ function MeterReadingModal({ isOpen, onClose, room, tenant, dormitoryId, previou
 
 function RoomsPageContent({ dormId }: { dormId: string }) {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [dormitoryName, setDormitoryName] = useState("");
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [showTenantDetailsModal, setShowTenantDetailsModal] = useState(false);
+  const [showRoomDetailsModal, setShowRoomDetailsModal] = useState(false);
+  const [showAddRoomModal, setShowAddRoomModal] = useState(false);
+  const [showEditRoomModal, setShowEditRoomModal] = useState(false);
+  const [showMeterReadingModal, setShowMeterReadingModal] = useState(false);
+  const [showRentDetailsModal, setShowRentDetailsModal] = useState(false);
+  const [showBatchBillModal, setShowBatchBillModal] = useState(false);
+  const [showAddTenantModal, setShowAddTenantModal] = useState(false);
+  const [meterReading, setMeterReading] = useState<number>(0);
+  const [selectedTenantForMeter, setSelectedTenantForMeter] = useState<Tenant | null>(null);
+  const [previousReading, setPreviousReading] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({
-    key: "number",
-    direction: "asc",
+    key: 'number',
+    direction: 'asc'
   });
   const [filters, setFilters] = useState<Filters>({
-    floor: "",
-    status: "",
-    roomType: "",
+    floor: '',
+    status: '',
+    roomType: '',
     priceRange: {
       min: 0,
-      max: 100000,
+      max: 0
     },
-    additionalServices: [],
+    additionalServices: []
   });
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [showRoomDetailsModal, setShowRoomDetailsModal] = useState(false);
-  const [showAddTenantModal, setShowAddTenantModal] = useState(false);
-  const [showRentDetailsModal, setShowRentDetailsModal] = useState(false);
-  const [showTenantDetailsModal, setShowTenantDetailsModal] = useState(false);
-  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
-  const [dormitoryConfig, setDormitoryConfig] = useState<RoomConfig | null>(null);
-  const [showMeterReadingModal, setShowMeterReadingModal] = useState(false);
-  const [previousReading, setPreviousReading] = useState(0);
-  const [selectedTenantForMeter, setSelectedTenantForMeter] = useState<Tenant | null>(null);
-  const [lastPaymentDates, setLastPaymentDates] = useState<Record<string, string>>({});
-  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [dormitoryResult, setDormitoryResult] = useState<DormitoryResult | null>(null);
-  const [showBatchBillModal, setShowBatchBillModal] = useState(false);
-  
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  // ใช้ dormitoryConfig จาก context แทน
+  // const [dormitoryConfig, setDormitoryConfig] = useState<DormitoryConfig | null>(null);
+  const { config: dormitoryConfig, isLoading: isLoadingConfig, refreshConfig } = useDormitoryConfig();
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [dormitoryName, setDormitoryName] = useState("");
+  const [lastPaymentDates, setLastPaymentDates] = useState<Record<string, string>>({});
+
   const router = useRouter();
   const { user } = useAuth();
   const searchParamsHook = useSearchParams();
@@ -351,50 +357,84 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   };
 
   const filteredRooms = useMemo(() => {
-    return rooms.filter((room) => {
-      if (searchQuery) {
-        const searchLower = searchQuery.toLowerCase();
-        if (!room.number.toLowerCase().includes(searchLower)) {
-        return false;
+    console.log("กำลังคำนวณ filteredRooms จากข้อมูลห้องทั้งหมด", rooms.length, "ห้อง");
+    
+    if (!rooms || rooms.length === 0) {
+      console.log("ไม่มีข้อมูลห้องพัก");
+      return [];
+    }
+    
+    let result = [...rooms];
+    
+    // ถ้ามีการค้นหา
+    if (searchQuery) {
+      console.log("กำลังค้นหาด้วยคำค้น:", searchQuery);
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(
+        (room) =>
+          room.number.toLowerCase().includes(query) ||
+          (room.roomType && room.roomType.toLowerCase().includes(query)) ||
+          (room.price && room.price.toString().includes(query))
+      );
+    }
+    
+    // กรองตามเงื่อนไขต่างๆ
+    if (filters.floor) {
+      result = result.filter((room) => room.floor === filters.floor);
+    }
+    
+    if (filters.status) {
+      result = result.filter((room) => room.status === filters.status);
+    }
+    
+    if (filters.roomType) {
+      result = result.filter((room) => room.roomType === filters.roomType);
+    }
+    
+    if (filters.priceRange.min > 0 || filters.priceRange.max > 0) {
+      result = result.filter(
+        (room) =>
+          (!filters.priceRange.min || (room.price && room.price >= filters.priceRange.min)) &&
+          (!filters.priceRange.max || (room.price && room.price <= filters.priceRange.max))
+      );
+    }
+    
+    if (filters.additionalServices.length > 0) {
+      result = result.filter((room) =>
+        filters.additionalServices.every((service) =>
+          room.additionalServices?.includes(service)
+        )
+      );
+    }
+    
+    // เรียงลำดับ
+    if (sortConfig.key && sortConfig.direction) {
+      result.sort((a, b) => {
+        if (sortConfig.key === 'number') {
+          const numA = parseInt(a.number.replace(/[^0-9]/g, ''));
+          const numB = parseInt(b.number.replace(/[^0-9]/g, ''));
+          return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
         }
-      }
-
-      if (filters.floor && room.floor.toString() !== filters.floor) {
-        return false;
-      }
-
-      if (filters.status && room.status !== filters.status) {
-        return false;
-      }
-
-      if (filters.roomType && room.roomType !== filters.roomType) {
-        return false;
-      }
-
-      if (filters.additionalServices.length > 0) {
-        const hasAllServices = filters.additionalServices.every(serviceId => 
-          room.additionalServices?.includes(serviceId)
-        );
-        if (!hasAllServices) {
-          return false;
+        
+        if (a[sortConfig.key] === undefined || b[sortConfig.key] === undefined) {
+          return 0;
         }
-      }
-
-      const roomType = roomTypes.find((type) => type.id === room.roomType);
-      if (roomType) {
-        const tenant = tenants.find(t => t.roomNumber === room.number);
-        const totalPrice = calculateTotalPrice(room, dormitoryConfig, tenant);
-        if (
-          totalPrice.total < filters.priceRange.min ||
-          totalPrice.total > filters.priceRange.max
-        ) {
-          return false;
+        
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
         }
-      }
-
-      return true;
-    });
-  }, [rooms, searchQuery, filters, dormitoryConfig, roomTypes, tenants]);
+        
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        
+        return 0;
+      });
+    }
+    
+    console.log("จำนวนห้องพักที่ผ่านการกรอง:", result.length, "ห้อง");
+    return result;
+  }, [rooms, searchQuery, filters, sortConfig]);
 
   const sortedAndFilteredRooms = useMemo(() => {
     return [...filteredRooms].sort((a, b) => {
@@ -427,139 +467,82 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
 
   // ฟังก์ชันโหลดข้อมูลห้องพัก
   const loadRooms = async () => {
+    if (!dormId) return;
+    
     try {
       setIsLoading(true);
-      const [roomsResult, roomTypesResult, dormResult, tenantsResult, billsResult] =
-        await Promise.all([
-          getRooms(dormId),
-          getRoomTypes(dormId),
-          getDormitory(dormId),
-          queryTenants(dormId),
-          getBillsByDormitory(dormId),
-        ]);
-
-      if (roomsResult.success && roomsResult.data) {
-        setRooms(roomsResult.data);
-      }
-
-      if (roomTypesResult.success && roomTypesResult.data) {
-        setRoomTypes(roomTypesResult.data);
-      }
-
-      if (dormResult.success && dormResult.data) {
-        setDormitoryName(dormResult.data.name);
-        // แปลง dormResult เป็น DormitoryResult type
-        const formattedResult: DormitoryResult = {
-          success: dormResult.success,
-          data: {
-            id: dormResult.data.id,
-            name: dormResult.data.name,
-            totalFloors: dormResult.data.totalFloors || 1,
-            config: dormResult.data.config
-          }
-        };
-        setDormitoryResult(formattedResult);
-        setDormitoryConfig({
-          roomTypes: dormResult.data.config?.roomTypes || {},
-          additionalFees: {
-            utilities: {
-              water: {
-                perPerson: dormResult.data.config?.additionalFees?.utilities?.water?.perPerson || null,
-              },
-              electric: {
-                unit: dormResult.data.config?.additionalFees?.utilities?.electric?.unit || null,
-              },
-            },
-            items: dormResult.data.config?.additionalFees?.items || [],
-            floorRates: dormResult.data.config?.additionalFees?.floorRates || {},
-          },
-        });
-      }
-
-      if (tenantsResult.success && tenantsResult.data) {
-        // อัพเดทสถานะของผู้เช่าตามข้อมูลบิลล่าสุด
-        if (billsResult.success && billsResult.data) {
-          const updatedTenants = tenantsResult.data.map(tenant => {
-            // กรองบิลที่เกี่ยวข้องกับผู้เช่านี้และยังไม่ชำระเงิน
-            const tenantBills = billsResult.data.filter(
-              (bill: any) => bill.tenantId === tenant.id && 
-              (bill.status === 'pending' || bill.status === 'partially_paid' || bill.status === 'overdue')
-            );
-            
-            // คำนวณยอดค้างชำระทั้งหมด
-            const outstandingBalance = tenantBills.reduce(
-              (total: number, bill: any) => total + (bill.remainingAmount || 0), 
-              0
-            );
-            
-            // อัพเดทข้อมูลผู้เช่า
-            return {
-              ...tenant,
-              outstandingBalance: outstandingBalance
-            };
-          });
-          
-          setTenants(updatedTenants);
-        } else {
-          setTenants(tenantsResult.data);
-        }
-      }
+      console.log("เริ่มโหลดข้อมูลห้องพัก สำหรับ dormId:", dormId);
       
-      // ดึงข้อมูลการชำระเงินล่าสุดของแต่ละห้อง
-      if (billsResult.success && billsResult.data) {
-        const paymentDates: Record<string, string> = {};
-        
-        // จัดกลุ่มบิลตามห้อง
-        const billsByRoom: Record<string, any[]> = {};
-        billsResult.data.forEach((bill: any) => {
-          if (!billsByRoom[bill.roomNumber]) {
-            billsByRoom[bill.roomNumber] = [];
-          }
-          billsByRoom[bill.roomNumber].push(bill);
-        });
-        
-        // หาบิลล่าสุดของแต่ละห้องที่มีการชำระเงิน
-        Object.entries(billsByRoom).forEach(([roomNumber, bills]) => {
-          // เรียงบิลตามวันที่สร้าง (ล่าสุดก่อน)
-          const sortedBills = bills.sort((a, b) => {
-            const dateA = new Date(a.createdAt).getTime();
-            const dateB = new Date(b.createdAt).getTime();
-            return dateB - dateA;
-          });
-          
-          // หาบิลล่าสุดที่มีการชำระเงิน
-          const latestPaidBill = sortedBills.find(bill => 
-            bill.status === 'paid' || bill.status === 'partially_paid'
-          );
-          
-          if (latestPaidBill && latestPaidBill.payments && latestPaidBill.payments.length > 0) {
-            // เรียงการชำระเงินตามวันที่ (ล่าสุดก่อน)
-            const sortedPayments = [...latestPaidBill.payments].sort((a, b) => {
-              const dateA = new Date(a.createdAt).getTime();
-              const dateB = new Date(b.createdAt).getTime();
-              return dateB - dateA;
-            });
-            
-            // เก็บวันที่ชำระเงินล่าสุด
-            if (sortedPayments[0] && sortedPayments[0].createdAt) {
-              paymentDates[roomNumber] = sortedPayments[0].createdAt;
-            }
-          }
-        });
-        
-        setLastPaymentDates(paymentDates);
+      const result = await getRooms(dormId);
+      console.log("ผลลัพธ์การโหลดห้องพัก:", result);
+      
+      if (result.success && result.data) {
+        console.log("โหลดข้อมูลห้องพักสำเร็จ จำนวน", result.data.length, "ห้อง");
+        setRooms(result.data);
+      } else {
+        console.error("ไม่สามารถโหลดข้อมูลห้องพักได้:", result.error);
+        setError("ไม่สามารถโหลดข้อมูลห้องพักได้");
       }
     } catch (error) {
-      console.error("Error loading rooms:", error);
-      toast.error("ไม่สามารถโหลดข้อมูลห้องพักได้");
+      console.error("เกิดข้อผิดพลาดในการโหลดข้อมูลห้องพัก:", error);
+      setError("เกิดข้อผิดพลาดในการโหลดข้อมูลห้องพัก");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ฟังก์ชันโหลดข้อมูลผู้เช่า
+  const loadTenants = async () => {
+    if (!dormId) return;
+    
+    try {
+      console.log("เริ่มโหลดข้อมูลผู้เช่า");
+      const result = await queryTenants(dormId);
+      console.log("ผลลัพธ์การโหลดข้อมูลผู้เช่า:", result);
+      
+      if (result.success && result.data) {
+        console.log("โหลดข้อมูลผู้เช่าสำเร็จ จำนวน", result.data.length, "คน");
+        setTenants(result.data);
+      }
+    } catch (error) {
+      console.error("เกิดข้อผิดพลาดในการโหลดข้อมูลผู้เช่า:", error);
+    }
+  };
+
+  // ฟังก์ชันโหลดข้อมูลประเภทห้อง
+  const loadRoomTypes = async () => {
+    if (!dormId) return;
+    
+    try {
+      console.log("เริ่มโหลดข้อมูลประเภทห้อง");
+      const result = await getRoomTypes(dormId);
+      console.log("ผลลัพธ์การโหลดข้อมูลประเภทห้อง:", result);
+      
+      if (result.success && result.data) {
+        console.log("โหลดข้อมูลประเภทห้องสำเร็จ จำนวน", result.data.length, "ประเภท");
+        setRoomTypes(result.data);
+      }
+    } catch (error) {
+      console.error("เกิดข้อผิดพลาดในการโหลดข้อมูลประเภทห้อง:", error);
+    }
+  };
+
+  // เพิ่ม useEffect เพื่อโหลดข้อมูลเมื่อหน้าเว็บโหลดเสร็จ
   useEffect(() => {
-    loadRooms();
+    console.log("useEffect ทำงาน, dormId:", dormId);
+    if (dormId) {
+      loadRooms();
+      loadRoomTypes();
+      loadTenants();
+    }
   }, [dormId]);
+
+  // เรียกใช้ refreshConfig เมื่อค่า dormId เปลี่ยน
+  useEffect(() => {
+    if (dormId) {
+      refreshConfig(dormId);
+    }
+  }, [dormId, refreshConfig]);
 
   // อัพเดท search query เมื่อ URL parameter เปลี่ยน
   useEffect(() => {
@@ -569,12 +552,12 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   const handleAddRoom = (newRoom: Room) => {
     setRooms((prevRooms) => [...prevRooms, newRoom]);
     router.refresh();
-    setShowAddModal(false);
+    setShowAddRoomModal(false);
   };
 
   const handleEditRoom = (room: Room) => {
     setSelectedRoom(room);
-    setShowEditModal(true);
+    setShowEditRoomModal(true);
   };
 
   const handleUpdateRoom = (updatedRoom: Room) => {
@@ -692,62 +675,68 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   };
 
   const getStatusText = (status: Room["status"], tenant?: Tenant) => {
-    // ถ้ามีผู้เช่าและมียอดค้างชำระ ให้แสดงสถานะ "ค้างจ่าย" แทน
-    if ((status === "occupied" || status === "pending_payment") && tenant && tenant.outstandingBalance && tenant.outstandingBalance > 0) {
-      return "ค้างจ่าย";
-    }
-
-    switch (status) {
-      case "available":
-        return "ว่าง";
-      case "occupied":
-        return "มีผู้เช่า";
-      case "maintenance":
-        return "ปรับปรุง";
-      case "abnormal":
-        return "ผิดปกติ";
-      case "ready_for_billing":
-        return "รอออกบิล";
-      case "pending_payment":
-        // ตรวจสอบว่ามีการชำระเงินบางส่วนหรือไม่
-        if (tenant && tenant.outstandingBalance && tenant.outstandingBalance > 0 && tenant.lastPaymentDate) {
-          return "ชำระบางส่วน";
-        }
-        return "รอชำระเงิน";
-      default:
-        return status;
+    // null check สำหรับ status
+    if (!status) return 'ไม่ระบุ';
+    
+    if (tenant) {
+      // ถ้ามีผู้เช่า
+      if (status === 'maintenance') {
+        return 'ปิดซ่อม';
+      } else if (status === 'abnormal') {
+        return 'ผิดปกติ';
+      } else if (status === 'pending_bill') {
+        return 'รอวางบิล';
+      } else if (status === 'billed') {
+        return 'รอชำระเงิน';
+      } else {
+        return 'มีผู้เช่า';
+      }
+    } else {
+      // ถ้าไม่มีผู้เช่า
+      if (status === 'occupied') {
+        return 'ว่าง (ยังไม่มีผู้เช่า)';
+      } else if (status === 'available') {
+        return 'ว่าง';
+      } else if (status === 'maintenance') {
+        return 'ปิดซ่อม';
+      } else if (status === 'abnormal') {
+        return 'ผิดปกติ';
+      } else if (status === 'reserved') {
+        return 'จอง';
+      } else {
+        return 'ไม่ระบุ';
+      }
     }
   };
 
   const getStatusColor = (status: Room["status"], tenant?: Tenant) => {
-    // ถ้ามีผู้เช่าและมียอดค้างชำระ ให้แสดงสีแดง
-    if ((status === "occupied" || status === "pending_payment") && tenant && tenant.outstandingBalance && tenant.outstandingBalance > 0) {
-      // ถ้ามีการชำระเงินบางส่วนแล้ว ให้แสดงสีส้ม
-      if (tenant.lastPaymentDate) {
-        return "bg-orange-100 text-orange-800";
-      }
-      return "bg-red-100 text-red-800";
-    }
+    // null check สำหรับ status
+    if (!status) return 'bg-gray-300';
 
+    // ถ้ามีผู้เช่าและยอดค้างชำระ
+    if (tenant && tenant.outstandingBalance > 0) {
+      return 'bg-red-500';
+    }
+    
     switch (status) {
       case "available":
-        return "bg-green-100 text-green-800";
+        return "bg-green-500";
       case "occupied":
-        return "bg-blue-100 text-blue-800";
+        return "bg-blue-500";
       case "maintenance":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-orange-400";
       case "abnormal":
-        return "bg-red-100 text-red-800";
+        return "bg-red-500";
       case "ready_for_billing":
-        return "bg-purple-100 text-purple-800";
+        return "bg-purple-500";
       case "pending_payment":
-        // ตรวจสอบว่ามีการชำระเงินบางส่วนหรือไม่
-        if (tenant && tenant.outstandingBalance && tenant.outstandingBalance > 0 && tenant.lastPaymentDate) {
-          return "bg-orange-100 text-orange-800";
+        // เช็คว่ามีการชำระเงินบางส่วนหรือไม่
+        if (tenant && tenant.outstandingBalance > 0 && tenant.lastPaymentDate) {
+          return "bg-amber-500"; // ชำระบางส่วน
         }
-        return "bg-orange-100 text-orange-800";
+        return "bg-yellow-500"; // รอชำระ
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-300"; // default
     }
   };
 
@@ -835,23 +824,62 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
     }
   };
 
-  const handleRoomClick = (room: Room) => {
+  const handleRoomClick = useCallback((room: Room) => {
+    // ปิดโมดาลอื่นๆ ก่อนเปิดโมดาลใหม่
+    setShowMeterReadingModal(false);
+    setShowRentDetailsModal(false);
+    setShowTenantDetailsModal(false);
+    setShowAddTenantModal(false);
+    
     setSelectedRoom(room);
     setShowRoomDetailsModal(true);
-  };
+  }, []);
 
-  const handleAddTenant = (room: Room) => {
-    setSelectedTenant(room);
+  const handleAddTenant = useCallback((room: Room) => {
+    // ปิดโมดาลอื่นๆ ก่อนเปิดโมดาลใหม่
+    setShowRoomDetailsModal(false);
+    setShowMeterReadingModal(false);
+    setShowRentDetailsModal(false);
+    setShowTenantDetailsModal(false);
+    
+    setSelectedRoom(room);
     setShowAddTenantModal(true);
-  };
+  }, []);
+
+  const handleTenantClick = useCallback((tenant: Tenant) => {
+    if (!tenant || !tenant.id) {
+      toast.error("ไม่พบข้อมูลผู้เช่า");
+      return;
+    }
+    
+    // ปิดโมดาลอื่นๆ ก่อนเปิดโมดาลใหม่
+    setShowRoomDetailsModal(false);
+    setShowMeterReadingModal(false);
+    setShowRentDetailsModal(false);
+    setShowAddTenantModal(false);
+    
+    setSelectedTenant(tenant);
+    setShowTenantDetailsModal(true);
+  }, []);
+
+  const handleRentDetailsClick = useCallback((room: Room) => {
+    // ปิดโมดาลอื่นๆ ก่อนเปิดโมดาลใหม่
+    setShowRoomDetailsModal(false);
+    setShowMeterReadingModal(false);
+    setShowTenantDetailsModal(false);
+    setShowAddTenantModal(false);
+    
+    setSelectedRoom(room);
+    setShowRentDetailsModal(true);
+  }, []);
 
   const handleTenantAdded = async () => {
     setShowAddTenantModal(false);
     
     try {
       // ถ้าห้องมีสถานะเป็น "abnormal" ให้เปลี่ยนเป็น "occupied"
-      if (selectedTenant && selectedTenant.status === 'abnormal') {
-        await updateRoom(dormId, selectedTenant.id, {
+      if (selectedRoom && selectedRoom.status === 'abnormal') {
+        await updateRoom(dormId, selectedRoom.id, {
           status: 'occupied'
         });
         toast.success("เปลี่ยนสถานะห้องจาก 'ผิดปกติ' เป็น 'มีผู้เช่า' เรียบร้อยแล้ว");
@@ -859,361 +887,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       
       toast.success("เพิ่มผู้เช่าเรียบร้อยแล้ว");
       loadRooms();
-    } catch (error) {
-      console.error("Error updating room status:", error);
-      toast.error("เกิดข้อผิดพลาดในการอัปเดตสถานะห้อง");
-    }
-  };
-
-  // เพิ่มฟังก์ชันสำหรับเปิด Modal กรอกค่ามิเตอร์
-  const handleMeterReading = async (room: Room, tenant?: Tenant) => {
-    try {
-      setSelectedTenantForMeter(tenant || null);
-      
-      // ดึงค่ามิเตอร์ล่าสุด
-      const result = await getLatestMeterReading(dormId, room.number, 'electric');
-      if (result.success && result.data) {
-        // ตรวจสอบว่ามีข้อมูลหรือไม่
-        const data = result.data as any; // ใช้ any เพื่อแก้ปัญหา type
-        setPreviousReading(data.currentReading || 0);
-      } else {
-        // ถ้าไม่มีค่ามิเตอร์ก่อนหน้า ใช้ค่าเริ่มต้นจากห้อง
-        setPreviousReading(room.initialMeterReading || 0);
-      }
-      
-      setShowMeterReadingModal(true);
-    } catch (error) {
-      console.error("Error fetching meter reading:", error);
-      toast.error("ไม่สามารถดึงข้อมูลค่ามิเตอร์ล่าสุดได้");
-    }
-  };
-
-  const handleRentDetailsClick = (room: Room) => {
-    setSelectedRoom(room);
-    setShowRentDetailsModal(true);
-    // ปิด RoomDetailsModal ถ้ามีการเปิดอยู่
-    setShowRoomDetailsModal(false);
-  };
-
-  const handleTenantClick = (tenant: Tenant) => {
-    setSelectedTenant(tenant);
-    setShowTenantDetailsModal(true);
-  };
-
-  // เพิ่มฟังก์ชันสำหรับตรวจสอบว่าห้องพร้อมออกบิลหรือไม่
-  const isRoomReadyForBilling = (room: Room, tenant: Tenant | undefined) => {
-    console.log("isRoomReadyForBilling check for room:", room.number, "status:", room.status);
-    
-    // ต้องมีผู้เช่า
-    if (!tenant) {
-      console.log("Room is not ready for billing: No tenant");
-      return false;
-    }
-    
-    // ตรวจสอบว่ามีการจดมิเตอร์หรือไม่
-    if (!tenant.hasMeterReading) {
-      console.log("Room is not ready for billing: No meter reading");
-      return false;
-    }
-    
-    // ตรวจสอบว่าค่ามิเตอร์ไฟล่าสุดไม่เป็น 0
-    if (!tenant.electricityUsage || tenant.electricityUsage.unitsUsed === 0) {
-      console.log("Room is not ready for billing: Electricity usage is 0 or undefined");
-      return false;
-    }
-    
-    // ตรวจสอบว่าห้องมีสถานะที่เหมาะสม
-    const hasValidStatus = room.status === 'occupied' || room.status === 'ready_for_billing';
-    if (!hasValidStatus) {
-      console.log("Room is not ready for billing: Invalid status:", room.status);
-      return false;
-    }
-    
-    // ตรวจสอบว่าห้องได้ชำระเงินในรอบบิลล่าสุดหรือไม่
-    if (tenant.lastPaymentDate) {
-      const lastPayment = new Date(tenant.lastPaymentDate);
-      const today = new Date();
-      
-      // ถ้าชำระเงินในเดือนปัจจุบัน ยังไม่พร้อมออกบิลใหม่
-      if (lastPayment.getMonth() === today.getMonth() && 
-          lastPayment.getFullYear() === today.getFullYear()) {
-        console.log("Room is not ready for billing: Payment already made this month");
-        return false;
-      }
-    }
-    
-    console.log("Room is ready for billing:", true);
-    return true;
-  };
-  
-  // เพิ่มฟังก์ชันสำหรับจัดการคลิกที่สถานะห้อง
-  const handleStatusClick = async (room: Room, tenant: Tenant | undefined) => {
-    console.log("handleStatusClick called with room:", room, "tenant:", tenant);
-    
-    if (room.status === 'occupied' && isRoomReadyForBilling(room, tenant)) {
-      console.log("Room is occupied and ready for billing");
-      // ตรวจสอบว่ามีบิลล่าสุดที่ชำระเงินแล้วหรือไม่
-      try {
-        setIsLoading(true);
-        
-        // โหลดข้อมูล config ของหอพัก
-        const dormitoryResult = await getDormitory(dormId);
-        if (!dormitoryResult.success || !dormitoryResult.data) {
-          console.error("Failed to load dormitory data");
-          toast.error("ไม่สามารถโหลดข้อมูลหอพักได้");
-          setIsLoading(false);
-          return;
-        }
-        
-        console.log("Dormitory config loaded:", dormitoryResult.data);
-        
-        // ดึงวันออกบิลจาก config
-        const billingDay = dormitoryResult.data.billingConditions?.billingDay || 1; // ค่าเริ่มต้นคือวันที่ 1
-        console.log("Billing day:", billingDay);
-        
-        // ดึงจำนวนวันที่สามารถออกบิลล่วงหน้าได้
-        const allowedDaysBeforeDueDate = dormitoryResult.data.billingConditions?.allowedDaysBeforeDueDate || 0;
-        console.log("Allowed days before due date:", allowedDaysBeforeDueDate);
-        
-        // ตรวจสอบว่าวันนี้สามารถออกบิลได้หรือไม่
-        const today = new Date();
-        const currentDate = today.getDate();
-        const currentMonth = today.getMonth();
-        const currentYear = today.getFullYear();
-        
-        // คำนวณวันที่เร็วที่สุดที่สามารถออกบิลได้
-        let earliestBillingDate = billingDay - allowedDaysBeforeDueDate;
-        
-        // ถ้า earliestBillingDate <= 0 ให้คำนวณวันที่จากเดือนก่อนหน้า
-        if (earliestBillingDate <= 0) {
-          // หาจำนวนวันในเดือนก่อนหน้า
-          const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-          const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-          const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate();
-          
-          // คำนวณวันที่ในเดือนก่อนหน้า
-          earliestBillingDate = daysInLastMonth + earliestBillingDate;
-          
-          // ตรวจสอบว่าวันนี้อยู่ในช่วงต้นเดือนที่สามารถออกบิลได้หรือไม่
-          // ถ้าวันนี้เป็นวันที่ 1-5 ของเดือน และ earliestBillingDate อยู่ในช่วงปลายเดือนก่อนหน้า (26-31)
-          if (currentDate <= 5 && earliestBillingDate >= 26) {
-            console.log("Can bill today (early month case)");
-            // สามารถออกบิลได้
-          } else {
-            // ไม่สามารถออกบิลได้ ต้องรอถึงวันที่ earliestBillingDate ของเดือนนี้
-            console.log("Cannot bill today, too early (cross-month case)");
-            toast.error(`ยังไม่สามารถออกบิลได้ในขณะนี้ สามารถออกบิลได้ตั้งแต่วันที่ ${earliestBillingDate} ของเดือนก่อนหน้า หรือวันที่ ${billingDay - allowedDaysBeforeDueDate + daysInLastMonth} ของเดือนนี้`);
-            setIsLoading(false);
-            return;
-          }
-        } else {
-          console.log("Current date:", currentDate, "Earliest billing date:", earliestBillingDate);
-          
-          // ตรวจสอบว่าวันนี้สามารถออกบิลได้หรือไม่
-          const canBillToday = currentDate >= earliestBillingDate;
-          
-          if (!canBillToday) {
-            console.log("Cannot bill today, too early");
-            toast.error(`ยังไม่สามารถออกบิลได้ในขณะนี้ สามารถออกบิลได้ตั้งแต่วันที่ ${earliestBillingDate} ของเดือน`);
-            setIsLoading(false);
-            return;
-          }
-        }
-        
-        // ตรวจสอบบิลล่าสุดโดยใช้ latestBillId
-        if (room.latestBillId) {
-          console.log("Room has latestBillId:", room.latestBillId);
-          
-          // ดึงข้อมูลบิลล่าสุด
-          const billResult = await getBill(dormId, room.latestBillId);
-          
-          if (billResult.success && billResult.data) {
-            const latestBill = billResult.data;
-            console.log("Latest bill:", latestBill);
-            
-            // ตรวจสอบว่าบิลล่าสุดชำระเงินแล้วหรือไม่
-            if (latestBill.status === 'paid' || latestBill.status === 'partially_paid') {
-              // ตรวจสอบว่าบิลล่าสุดอยู่ในรอบบิลปัจจุบันหรือไม่
-              const today = new Date();
-              const currentMonth = today.getMonth();
-              const currentYear = today.getFullYear();
-              
-              console.log("Current date:", today, "Month:", currentMonth, "Year:", currentYear);
-              
-              // วันที่ชำระเงินล่าสุด - ใช้ createdAt หรือวันที่ปัจจุบัน
-              const paidDate = latestBill.createdAt ? new Date(latestBill.createdAt) : new Date();
-              const paidMonth = paidDate.getMonth();
-              const paidYear = paidDate.getFullYear();
-              
-              console.log("Paid date:", paidDate, "Month:", paidMonth, "Year:", paidYear);
-              
-              // คำนวณรอบบิลปัจจุบัน
-              let billingMonth = currentMonth;
-              let billingYear = currentYear;
-              
-              // ถ้าวันนี้ยังไม่ถึงวันออกบิล ให้ใช้รอบบิลของเดือนก่อนหน้า
-              if (today.getDate() < billingDay) {
-                billingMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-                billingYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-              }
-              
-              console.log("Billing cycle - Month:", billingMonth, "Year:", billingYear);
-              
-              // ตรวจสอบว่าบิลล่าสุดอยู่ในรอบบิลปัจจุบันหรือไม่
-              const isSameBillingCycle = (paidMonth === billingMonth && paidYear === billingYear);
-              
-              console.log("Is same billing cycle:", isSameBillingCycle);
-              
-              if (isSameBillingCycle) {
-                // ถ้าอยู่ในรอบบิลเดียวกัน ให้แสดงกล่องเตือน
-                console.log("Showing confirmation dialog for duplicate billing");
-                const confirmMessage = `ห้องนี้ได้ชำระเงินในรอบบิลนี้แล้ว (${paidDate.toLocaleDateString('th-TH')}) ต้องการออกบิลซ้ำหรือไม่?`;
-                if (window.confirm(confirmMessage)) {
-                  // ถ้าตกลง ให้อัพเดทสถานะเป็น "ready_for_billing"
-                  console.log("User confirmed, updating room to ready_for_billing");
-                  updateRoomToReadyForBilling(room);
-                } else {
-                  console.log("User cancelled duplicate billing");
-                }
-                setIsLoading(false);
-                return;
-              }
-            }
-          }
-        } else {
-          console.log("Room has no latestBillId, checking bills by room number");
-          
-          // ถ้าไม่มี latestBillId ให้ค้นหาบิลจากเลขห้อง (วิธีเดิม)
-        const billsResult = await getBillsByDormitory(dormId);
-        console.log("Bills result:", billsResult);
-        
-        if (billsResult.success && billsResult.data && billsResult.data.length > 0) {
-          // กรองเฉพาะบิลที่เกี่ยวข้องกับห้องนี้
-          const roomBills = billsResult.data.filter((bill: any) => {
-            // ตรวจสอบทั้ง roomId และ roomNumber
-            const matchesRoomId = bill.roomId === room.id;
-            const matchesRoomNumber = bill.roomNumber === room.number || bill.roomNumber === parseInt(room.number);
-            return matchesRoomId || matchesRoomNumber;
-          });
-          
-          console.log("Room bills:", roomBills);
-          
-          if (roomBills.length > 0) {
-            // เรียงลำดับบิลตามวันที่สร้าง (ล่าสุดก่อน)
-            const sortedBills = roomBills.sort((a: any, b: any) => {
-              const dateA = new Date(a.createdAt).getTime();
-              const dateB = new Date(b.createdAt).getTime();
-              return dateB - dateA;
-            });
-            
-            console.log("Sorted bills:", sortedBills);
-            
-            // ตรวจสอบบิลล่าสุดที่ชำระเงินแล้ว
-            const latestPaidBill = sortedBills.find((bill: any) => 
-              bill.status === 'paid' || bill.status === 'partially_paid'
-            ) as any; // ใช้ any เพื่อแก้ปัญหา TypeScript
-            
-            console.log("Latest paid bill:", latestPaidBill);
-            
-            if (latestPaidBill) {
-              // ตรวจสอบว่าบิลล่าสุดอยู่ในรอบบิลปัจจุบันหรือไม่
-              const today = new Date();
-              const currentMonth = today.getMonth();
-              const currentYear = today.getFullYear();
-              
-              console.log("Current date:", today, "Month:", currentMonth, "Year:", currentYear);
-              
-              // วันที่ชำระเงินล่าสุด - ใช้ createdAt หรือวันที่ปัจจุบัน
-              const paidDate = latestPaidBill.createdAt ? new Date(latestPaidBill.createdAt) : new Date();
-              const paidMonth = paidDate.getMonth();
-              const paidYear = paidDate.getFullYear();
-              
-              console.log("Paid date:", paidDate, "Month:", paidMonth, "Year:", paidYear);
-              
-              // คำนวณรอบบิลปัจจุบัน
-              let billingMonth = currentMonth;
-              let billingYear = currentYear;
-              
-              // ถ้าวันนี้ยังไม่ถึงวันออกบิล ให้ใช้รอบบิลของเดือนก่อนหน้า
-              if (today.getDate() < billingDay) {
-                billingMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-                billingYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-              }
-              
-              console.log("Billing cycle - Month:", billingMonth, "Year:", billingYear);
-              
-              // ตรวจสอบว่าบิลล่าสุดอยู่ในรอบบิลปัจจุบันหรือไม่
-              const isSameBillingCycle = (paidMonth === billingMonth && paidYear === billingYear);
-              
-              console.log("Is same billing cycle:", isSameBillingCycle);
-              
-              if (isSameBillingCycle) {
-                // ถ้าอยู่ในรอบบิลเดียวกัน ให้แสดงกล่องเตือน
-                console.log("Showing confirmation dialog for duplicate billing");
-                const confirmMessage = `ห้องนี้ได้ชำระเงินในรอบบิลนี้แล้ว (${paidDate.toLocaleDateString('th-TH')}) ต้องการออกบิลซ้ำหรือไม่?`;
-                if (window.confirm(confirmMessage)) {
-                  // ถ้าตกลง ให้อัพเดทสถานะเป็น "ready_for_billing"
-                  console.log("User confirmed, updating room to ready_for_billing");
-                  updateRoomToReadyForBilling(room);
-                } else {
-                  console.log("User cancelled duplicate billing");
-                }
-                setIsLoading(false);
-                return;
-                }
-              }
-            }
-          }
-        }
-        
-        // ถ้าไม่มีบิลล่าสุดที่ชำระเงินแล้ว หรือบิลล่าสุดไม่ได้อยู่ในรอบบิลปัจจุบัน
-        // ให้อัพเดทสถานะเป็น "ready_for_billing" ตามปกติ
-        console.log("No recent paid bill in current billing cycle, updating room to ready_for_billing");
-        updateRoomToReadyForBilling(room);
-        
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Error checking recent bills:", error);
-        toast.error("เกิดข้อผิดพลาดในการตรวจสอบบิลล่าสุด");
-        setIsLoading(false);
-      }
-    } else if (room.status === 'ready_for_billing' && tenant) {
-      console.log("Room is ready for billing, opening BillPreviewModal");
-      // ถ้าสถานะเป็น "ready_for_billing" ให้เปิด BillPreviewModal
-      setSelectedRoom(room);
-      setSelectedTenant(tenant);
-      setShowRentDetailsModal(true);
-    } else if (room.status === 'pending_payment' && tenant) {
-      // ถ้าสถานะเป็น "pending_payment" ให้นำทางไปยังหน้าจัดการบิล
-      if (room.latestBillId) {
-        console.log("Room has latestBillId:", room.latestBillId);
-        router.push(`/dormitories/${dormId}/bills?room=${room.number}`);
-      } else {
-        // ถ้าไม่มี latestBillId ให้แนะนำให้ไปที่หน้าบิล
-        toast.info("กรุณาไปที่หน้าจัดการบิลเพื่อชำระเงิน");
-        router.push(`/dormitories/${dormId}/bills?room=${room.number}`);
-      }
-    } else {
-      console.log("Room status doesn't match any condition for billing actions");
-    }
-  };
-  
-  // เพิ่มฟังก์ชันสำหรับจัดการเมื่อสร้างบิลเรียบร้อยแล้ว
-  const handleBillCreated = async () => {
-    console.log("handleBillCreated called, selectedRoom:", selectedRoom);
-    // รีเซ็ตค่า selectedRoom เพื่อไม่ให้ RoomDetailsModal เปิดขึ้นโดยอัตโนมัติ
-    setSelectedRoom(null);
-    
-    try {
-      // อัพเดทสถานะห้องเป็น "pending_payment"
-      if (selectedRoom) {
-        console.log("Updating room status to pending_payment");
-        await updateRoomStatus(dormId, selectedRoom.id, 'pending_payment');
-        console.log("Room status updated successfully");
-        toast.success(`อัพเดทสถานะห้อง ${selectedRoom.number} เป็น "รอชำระเงิน" เรียบร้อยแล้ว`);
-      } else {
-        console.error("No selected room to update status");
-      }
+      // รีเซ็ตตัวแปร
+      setSelectedRoom(null);
     } catch (error) {
       console.error("Error updating room status:", error);
       toast.error("เกิดข้อผิดพลาดในการอัพเดทสถานะห้อง");
@@ -1357,7 +1032,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
   
 
   // เพิ่มฟังก์ชันสำหรับการออกบิล
-  const handleCreateBill = async (room: Room, tenant: Tenant | undefined) => {
+  const handleCreateBill = useCallback((room: Room, tenant: Tenant | undefined) => {
     if (!tenant) {
       toast.error("ไม่สามารถออกบิลได้: ไม่มีผู้เช่า");
       return;
@@ -1373,10 +1048,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       return;
     }
     
-    // เปิด BatchBillModal แทนที่จะนำทางไปยังหน้าสร้างบิล
+    // เปิด RentDetailsModal แทนที่จะนำทางไปยังหน้าสร้างบิล
     setSelectedRooms([room.id]);
     setShowRentDetailsModal(true);
-  };
+  }, []);
 
   // เพิ่มฟังก์ชันสำหรับการออกบิลหลายรายการ
   const handleBatchCreateBill = () => {
@@ -1454,6 +1129,89 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       return dateString;
     }
   };
+
+  // เพิ่มฟังก์ชันสำหรับตรวจสอบว่าห้องพร้อมออกบิลหรือไม่
+  const isRoomReadyForBilling = (room: Room, tenant: Tenant | undefined) => {
+    // ต้องมีผู้เช่า
+    if (!tenant) {
+      return false;
+    }
+    
+    // ตรวจสอบว่ามีการจดมิเตอร์หรือไม่
+    if (!tenant.hasMeterReading) {
+      return false;
+    }
+    
+    // ตรวจสอบว่าค่ามิเตอร์ไฟล่าสุดไม่เป็น 0
+    if (!tenant.electricityUsage || tenant.electricityUsage.unitsUsed === 0) {
+      return false;
+    }
+    
+    // ตรวจสอบว่าห้องมีสถานะที่เหมาะสม
+    const hasValidStatus = room.status === 'occupied' || room.status === 'ready_for_billing';
+    if (!hasValidStatus) {
+      return false;
+    }
+    
+    // ตรวจสอบว่าห้องได้ชำระเงินในรอบบิลล่าสุดหรือไม่
+    if (tenant.lastPaymentDate) {
+      const lastPayment = new Date(tenant.lastPaymentDate);
+      const today = new Date();
+      
+      // ถ้าชำระเงินในเดือนปัจจุบัน ยังไม่พร้อมออกบิลใหม่
+      if (lastPayment.getMonth() === today.getMonth() && 
+          lastPayment.getFullYear() === today.getFullYear()) {
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
+  // เพิ่ม useMemo สำหรับคำนวณราคาทั้งหมดของแต่ละห้อง
+  const roomPriceDetails = useMemo(() => {
+    if (!rooms || !dormitoryConfig) return {};
+    
+    const priceMap: Record<string, { total: number, breakdown: any }> = {};
+    
+    rooms.forEach(room => {
+      const tenant = tenants.find(t => t.roomNumber === room.number);
+      priceMap[room.id] = calculateTotalPrice(room, dormitoryConfig, tenant);
+    });
+    
+    return priceMap;
+  }, [rooms, dormitoryConfig, tenants]);
+
+  // เพิ่มฟังก์ชันสำหรับเปิด Modal กรอกค่ามิเตอร์
+  const handleMeterReading = useCallback(async (room: Room, tenant?: Tenant) => {
+    if (!room || !dormId) return;
+
+    try {
+      // ดึงค่ามิเตอร์ล่าสุด
+      const result = await getLatestMeterReading(dormId, room.id, 'electric');
+      let newPreviousReading = 0;
+
+      if (result.success && result.data && 'currentReading' in result.data) {
+        newPreviousReading = (result.data as { currentReading: number }).currentReading;
+      }
+
+      // ปิดโมดาลอื่นๆ ก่อนเปิดโมดาลใหม่
+      setShowRoomDetailsModal(false);
+      setShowRentDetailsModal(false);
+      setShowTenantDetailsModal(false);
+      setShowAddTenantModal(false);
+      
+      // เปิด Modal บันทึกค่ามิเตอร์
+      setSelectedRoom(room);
+      setSelectedTenantForMeter(tenant || null);
+      setMeterReading(newPreviousReading);
+      setPreviousReading(newPreviousReading);
+      setShowMeterReadingModal(true);
+    } catch (error) {
+      console.error("Error preparing meter reading:", error);
+      toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลมิเตอร์ล่าสุด");
+    }
+  }, [dormId]);
 
   if (isLoading) {
     return (
@@ -1616,7 +1374,7 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             จัดการประเภทห้อง
           </Link>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => setShowAddRoomModal(true)}
             className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
           >
             เพิ่มห้องพัก
@@ -1708,76 +1466,115 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full table-auto border-collapse">
+            <thead className="bg-gray-100 text-gray-700 text-sm">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
+                <th className="py-2 px-3 text-center font-medium w-10">
+                  <input 
+                    type="checkbox" 
                     checked={selectedRooms.length === sortedAndFilteredRooms.length && sortedAndFilteredRooms.length > 0}
                     onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
                   />
                 </th>
-                <th 
-                  scope="col" 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('number')}
-                >
-                  เลขห้อง {sortConfig.key === 'number' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                <th className="py-2 px-3 text-left font-medium">
+                  <span onClick={() => handleSort('number')} className="cursor-pointer flex items-center">
+                    เลขห้อง{' '}
+                    {sortConfig.key === 'number' && (
+                      <span className="ml-1">
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ชั้น
+                <th className="py-2 px-3 text-left font-medium">
+                  <span onClick={() => handleSort('floor')} className="cursor-pointer flex items-center">
+                    ชั้น{' '}
+                    {sortConfig.key === 'floor' && (
+                      <span className="ml-1">
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ประเภทห้อง
+                <th className="py-2 px-3 text-left font-medium">
+                  <span onClick={() => handleSort('status')} className="cursor-pointer flex items-center">
+                    ประเภทห้อง{' '}
+                    {sortConfig.key === 'roomType' && (
+                      <span className="ml-1">
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  จำนวนผู้อาศัย
+                <th className="py-2 px-3 text-center font-medium whitespace-nowrap min-w-32">
+                  จำนวนผู้พักอาศัย
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ค่าไฟ (ล่าสุด)
+                <th className="py-2 px-3 text-left font-medium">
+                  ค่าไฟฟ้า
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ค่าเช่ารวม
+                <th className="py-2 px-3 text-right font-medium">
+                  <span onClick={() => handleSort('price')} className="cursor-pointer flex items-center justify-end">
+                    ค่าเช่ารวม{' '}
+                    {sortConfig.key === 'price' && (
+                      <span className="ml-1">
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ค้างจ่าย
+                <th className="py-2 px-3 text-right font-medium">
+                  ยอดค้างชำระ
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="py-2 px-3 text-center font-medium">
                   สถานะ
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="py-2 px-3 text-center font-medium">
                   วันที่ชำระล่าสุด
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="py-2 px-3 text-center font-medium">
                   ผู้เช่า
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="py-2 px-3 text-right font-medium">
                   จัดการ
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200">
               {sortedAndFilteredRooms.map((room) => {
-                const roomType = roomTypes.find((type) => type.id === room.roomType);
-                const tenant = tenants.find((t) => t.roomNumber === room.number);
-                const totalPrice = calculateTotalPrice(room, dormitoryConfig, tenant);
-                const lastPaymentDate = lastPaymentDates[room.number];
+                const tenant = tenants.find(t => t.roomNumber === room.number);
+                // ตรวจสอบว่า dormitoryConfig ไม่เป็น null ก่อนเรียกใช้ calculateTotalPrice
+                const priceDetails = dormitoryConfig ? calculateTotalPrice(room, dormitoryConfig, tenant) : {
+                  total: 0, 
+                  breakdown: {
+                    basePrice: 0,
+                    floorRate: 0,
+                    additionalServices: 0,
+                    specialItems: 0,
+                    water: 0,
+                    electricity: 0
+                  }
+                };
 
                 return (
-                  <tr key={room.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <tr key={room.id} className={`hover:bg-gray-50 cursor-pointer`}>
+                    <td className="px-2 py-4 whitespace-nowrap text-center" onClick={(e) => { e.stopPropagation(); }}>
                       <input
                         type="checkbox"
                         checked={selectedRooms.includes(room.id)}
-                        onChange={(e) => handleSelectRoom(room.id, e.target.checked)}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleSelectRoom(room.id, e.target.checked);
+                        }}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       <button
-                        onClick={() => handleRoomClick(room)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRoomClick(room);
+                        }}
                         className="text-blue-600 hover:text-blue-900 hover:underline"
                       >
                         {room.number.padStart(3, '0')}
@@ -1789,8 +1586,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {roomTypes.find(type => type.id === room.roomType)?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {tenant?.numberOfResidents || '-'} คน
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                      {tenant?.numberOfResidents || '-'} {tenant?.numberOfResidents ? 'คน' : ''}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {tenant?.electricityUsage ? (
@@ -1802,7 +1599,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                             }
                           </span>
                           <button
-                            onClick={() => handleMeterReading(room, tenant)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMeterReading(room, tenant);
+                            }}
                             className="ml-2 text-blue-600 hover:text-blue-800"
                             title="บันทึกค่ามิเตอร์ใหม่"
                           >
@@ -1811,7 +1611,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                         </div>
                       ) : room.status === 'occupied' && tenant ? (
                         <button
-                          onClick={() => handleMeterReading(room, tenant)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMeterReading(room, tenant);
+                          }}
                           className="inline-flex items-center text-blue-600 hover:text-blue-800"
                         >
                           <Zap className="h-4 w-4 mr-1" />
@@ -1819,7 +1622,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleMeterReading(room, undefined)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMeterReading(room, undefined);
+                          }}
                           className="inline-flex items-center text-blue-600 hover:text-blue-800"
                         >
                           <Zap className="h-4 w-4 mr-1" />
@@ -1829,10 +1635,13 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <button
-                        onClick={() => handleRentDetailsClick(room)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRentDetailsClick(room);
+                        }}
                         className="text-blue-600 hover:text-blue-900 hover:underline"
                       >
-                        {totalPrice.total.toLocaleString()} บาท
+                        {roomPriceDetails[room.id]?.total.toLocaleString() || "0"} บาท
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1848,8 +1657,8 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       {getStatusText(room.status, tenant)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {lastPaymentDate ? (
-                        <span className="text-green-600">{formatThaiDate(lastPaymentDate)}</span>
+                      {lastPaymentDates[room.number] ? (
+                        <span className="text-green-600">{formatThaiDate(lastPaymentDates[room.number])}</span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -1857,14 +1666,20 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {tenant ? (
                         <button
-                          onClick={() => handleTenantClick(tenant)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTenantClick(tenant);
+                          }}
                           className="text-blue-600 hover:text-blue-900 hover:underline"
                         >
                           {tenant.name}
                         </button>
                       ) : (room.status === "available" || room.status === "abnormal") ? (
                         <button
-                          onClick={() => handleAddTenant(room)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddTenant(room);
+                          }}
                           className="inline-flex items-center text-blue-600 hover:text-blue-900"
                         >
                           <UserPlus className="w-4 h-4 mr-1" />
@@ -1878,7 +1693,10 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                       <div className="flex justify-end gap-2">
                         {isRoomReadyForBilling(room, tenant) && (
                           <button
-                            onClick={() => handleCreateBill(room, tenant)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreateBill(room, tenant);
+                            }}
                             className="text-green-600 hover:text-green-900"
                             title="ออกบิล"
                           >
@@ -1886,13 +1704,19 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
                           </button>
                         )}
                         <button
-                          onClick={() => handleEditRoom(room)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditRoom(room);
+                          }}
                           className="text-blue-600 hover:text-blue-900"
                         >
                           แก้ไข
                         </button>
                         <button
-                          onClick={() => handleDeleteRoom(room.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRoom(room.id);
+                          }}
                           className="text-red-600 hover:text-red-900"
                         >
                           ลบ
@@ -1907,29 +1731,30 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         </div>
       </div>
 
-      {showAddModal && (
+      {showAddRoomModal && (
         <AddRoomModal
-          isOpen={showAddModal}
-          onClose={() => setShowAddModal(false)}
+          isOpen={showAddRoomModal}
+          onClose={() => setShowAddRoomModal(false)}
           dormitoryId={dormId}
           roomTypes={roomTypes}
           onSuccess={handleAddRoom}
-          totalFloors={dormitoryResult?.data?.totalFloors || 1}
+          totalFloors={dormitoryConfig?.data?.totalFloors || 1}
         />
       )}
 
-      {selectedRoom && !showRoomDetailsModal && (
+      {selectedRoom && !showRoomDetailsModal && !showMeterReadingModal && !showRentDetailsModal && !showAddTenantModal && (
         <EditRoomModal
+          isOpen={false}
           room={selectedRoom}
           roomTypes={roomTypes}
           onClose={() => setSelectedRoom(null)}
           onSuccess={handleUpdateRoom}
           dormitoryId={dormId}
-          totalFloors={dormitoryResult?.data?.totalFloors || 1}
+          totalFloors={dormitoryConfig?.data?.totalFloors || 1}
         />
       )}
 
-      {selectedRoom && showRoomDetailsModal && (
+      {selectedRoom && showRoomDetailsModal && !showMeterReadingModal && !showRentDetailsModal && !showAddTenantModal && (
         <RoomDetailsModal
           isOpen={showRoomDetailsModal}
           onClose={() => {
@@ -1938,25 +1763,33 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
           }}
           dormitoryId={dormId}
           roomNumber={selectedRoom.number}
-          roomTypes={roomTypes}
+          roomTypes={roomTypes || []}
           config={dormitoryConfig}
           currentTenant={tenants.find(t => t.roomNumber === selectedRoom.number)}
         />
       )}
 
-      {showAddTenantModal && selectedTenant && (
+      {showAddTenantModal && selectedRoom && !showMeterReadingModal && !showRoomDetailsModal && !showRentDetailsModal && (
         <AddTenantModal
           isOpen={showAddTenantModal}
-          onClose={() => setShowAddTenantModal(false)}
+          onClose={() => {
+            setShowAddTenantModal(false);
+            // ไม่รีเซ็ต selectedRoom ที่นี่เพื่อให้สามารถทำงานต่อกับห้องนั้นได้
+          }}
           dormitories={[{ id: dormId, name: dormitoryName }] as Dormitory[]}
           onSuccess={handleTenantAdded}
         />
       )}
 
-      {showMeterReadingModal && selectedTenantForMeter && (
+      {showMeterReadingModal && selectedRoom && selectedTenantForMeter && !showRoomDetailsModal && !showRentDetailsModal && !showAddTenantModal && (
         <MeterReadingModal
           isOpen={showMeterReadingModal}
-          onClose={() => setShowMeterReadingModal(false)}
+          onClose={() => {
+            setShowMeterReadingModal(false);
+            setSelectedTenantForMeter(null);
+            setPreviousReading(0);
+            // ไม่รีเซ็ต selectedRoom ที่นี่เพื่อให้สามารถกลับมาจัดการห้องเดิมได้
+          }}
           room={selectedRoom}
           tenant={selectedTenantForMeter}
           dormitoryId={dormId}
@@ -1965,35 +1798,44 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
         />
       )}
 
-      {selectedRoom && showRentDetailsModal && (
+      {selectedRoom && showRentDetailsModal && !showMeterReadingModal && !showRoomDetailsModal && !showAddTenantModal && (
         <RentDetailsModal
           isOpen={showRentDetailsModal}
-          onClose={() => setShowRentDetailsModal(false)}
+          onClose={() => {
+            setShowRentDetailsModal(false);
+            // ไม่รีเซ็ต selectedRoom ที่นี่เพื่อให้สามารถกลับมาจัดการห้องเดิมได้
+          }}
           room={selectedRoom}
           tenant={tenants.find(t => t.roomNumber === selectedRoom.number)}
-          priceDetails={calculateTotalPrice(
-            selectedRoom,
-            dormitoryConfig,
-            tenants.find(t => t.roomNumber === selectedRoom.number)
-          )}
+          priceDetails={roomPriceDetails[selectedRoom.id] || {
+            total: 0, 
+            breakdown: {
+              basePrice: 0,
+              floorRate: 0,
+              additionalServices: 0,
+              specialItems: 0,
+              water: 0,
+              electricity: 0
+            }
+          }}
           roomTypeName={roomTypes.find(type => type.id === selectedRoom.roomType)?.name || '-'}
         />
       )}
 
-      {selectedTenant && showTenantDetailsModal && (
+      {/* Modal แสดงรายละเอียดผู้เช่า */}
+      {showTenantDetailsModal && selectedTenant && !showMeterReadingModal && !showRoomDetailsModal && !showRentDetailsModal && !showAddTenantModal && (
         <TenantDetailsModal
           isOpen={showTenantDetailsModal}
-          onClose={() => setShowTenantDetailsModal(false)}
-          tenant={selectedTenant}
-          dormitoryId={dormId}
-          onSuccess={() => {
-            loadRooms();
+          onClose={() => {
             setShowTenantDetailsModal(false);
+            setSelectedTenant(null);
           }}
+          tenantId={selectedTenant.id}
+          dormitoryId={dormId}
         />
       )}
 
-      {/* Batch Bill Modal */}
+      {/* Batch Bill Modal - ไม่ขัดแย้งกับโมดาลอื่น */}
       {showBatchBillModal && (
         <BatchBillModal
           isOpen={showBatchBillModal}
@@ -2009,6 +1851,24 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
             setSelectedRooms([]);
             toast.success("สร้างบิลสำเร็จ");
           }}
+        />
+      )}
+
+      {selectedRoom && showEditRoomModal && !showRoomDetailsModal && !showMeterReadingModal && !showRentDetailsModal && !showAddTenantModal && (
+        <EditRoomModal
+          isOpen={showEditRoomModal}
+          room={selectedRoom}
+          roomTypes={roomTypes}
+          onClose={() => {
+            setShowEditRoomModal(false);
+            setSelectedRoom(null);
+          }}
+          onSuccess={(updatedRoom) => {
+            handleUpdateRoom(updatedRoom);
+            setShowEditRoomModal(false);
+          }}
+          dormitoryId={dormId}
+          totalFloors={dormitoryConfig?.data?.totalFloors || 1}
         />
       )}
     </div>
