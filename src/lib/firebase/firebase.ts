@@ -4,6 +4,7 @@ import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
 import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
 import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
 import { setupStorageCORS } from "./storage-cors-fix";
+import * as admin from "firebase-admin";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -103,6 +104,23 @@ if (typeof window !== 'undefined') {
   }
 } else {
   console.log('Firebase initialization skipped (server-side)');
+}
+
+// Initialize Firebase Admin SDK
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+      }),
+      databaseURL: `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseio.com`
+    });
+    console.log('Firebase Admin SDK initialized');
+  } catch (error) {
+    console.error('Error initializing Firebase Admin SDK:', error);
+  }
 }
 
 export { db, auth, storage, analytics };

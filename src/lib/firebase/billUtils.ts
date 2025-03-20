@@ -962,37 +962,43 @@ export const getBillingSummary = async (dormitoryId: string): Promise<ApiRespons
   }
 };
 
-// เพิ่มฟังก์ชันสำหรับตรวจสอบบิลที่เกินกำหนด
-export const checkOverdueBills = async (dormitoryId: string) => {
+// ตรวจสอบบิลที่เลยกำหนดชำระ
+export const checkOverdueBills = async () => {
   try {
-    const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
-    const q = query(
-      billsRef,
-      where('status', 'in', ['pending', 'partially_paid']),
-      where('dueDate', '<', Timestamp.now())
-    );
-    
-    const snapshot = await getDocs(q);
-    const batch = writeBatch(db);
-    let updatedCount = 0;
+    const billsRef = collection(db, 'dormitories');
+    const dormitoriesSnapshot = await getDocs(billsRef);
 
-    snapshot.docs.forEach(doc => {
-      const billRef = doc.ref;
-      batch.update(billRef, {
-        status: 'overdue',
-        updatedAt: Timestamp.now()
+    for (const dormDoc of dormitoriesSnapshot.docs) {
+      const dormitoryId = dormDoc.id;
+      const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
+      const q = query(
+        billsRef,
+        where('status', 'in', ['pending', 'partially_paid']),
+        where('dueDate', '<', Timestamp.now())
+      );
+
+      const billsSnapshot = await getDocs(q);
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+
+      billsSnapshot.docs.forEach(doc => {
+        const billRef = doc.ref;
+        batch.update(billRef, {
+          status: 'overdue',
+          updatedAt: Timestamp.now()
+        });
+        updatedCount++;
       });
-      updatedCount++;
-    });
 
-    if (updatedCount > 0) {
-      await batch.commit();
+      if (updatedCount > 0) {
+        await batch.commit();
+      }
     }
 
     return { success: true, data: { updatedCount } };
   } catch (error) {
     console.error('Error checking overdue bills:', error);
-    return { success: false, error };
+    throw error;
   }
 };
 
