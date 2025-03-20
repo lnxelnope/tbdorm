@@ -1,10 +1,8 @@
-import { initializeApp, getApps, FirebaseApp } from "firebase/app";
-import { getFirestore, Firestore, connectFirestoreEmulator, collection, doc, setDoc, deleteDoc, getDocs, query, limit } from "firebase/firestore";
-import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
-import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
-import { setupStorageCORS } from "./storage-cors-fix";
-import * as admin from "firebase-admin";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,111 +14,34 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-console.log('Firebase config:', {
-  apiKey: firebaseConfig.apiKey ? '***' : 'missing',
-  authDomain: firebaseConfig.authDomain ? '***' : 'missing',
-  projectId: firebaseConfig.projectId ? firebaseConfig.projectId : 'missing',
-  storageBucket: firebaseConfig.storageBucket ? '***' : 'missing',
-  messagingSenderId: firebaseConfig.messagingSenderId ? '***' : 'missing',
-  appId: firebaseConfig.appId ? '***' : 'missing',
-  measurementId: firebaseConfig.measurementId ? '***' : 'missing',
-});
+console.log('Firebase config:', firebaseConfig);
 
 // Initialize Firebase
-let app: FirebaseApp;
-let db: Firestore;
-let auth: Auth;
-let storage: FirebaseStorage;
+let app;
 let analytics: Analytics | null = null;
 
-if (typeof window !== 'undefined') {
-  try {
-    if (!getApps().length) {
-      if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-        throw new Error('Firebase configuration is incomplete. Check your environment variables.');
-      }
-      
-      app = initializeApp(firebaseConfig);
-      console.log('Firebase app initialized:', app.name);
-    } else {
-      app = getApps()[0];
-      console.log('Using existing Firebase app:', app.name);
-    }
-
-    auth = getAuth(app);
-    db = getFirestore(app);
-    storage = getStorage(app);
-    
-    // แก้ไขปัญหา CORS
-    if (typeof window !== 'undefined') {
-      setupStorageCORS();
-    }
-
-    // ตรวจสอบการเชื่อมต่อกับ Firestore
+if (!getApps().length) {
+  if (typeof window !== 'undefined') {
     try {
-      const testConnection = async () => {
-        try {
-          console.log('Testing Firestore connection...');
-          
-          // ทดสอบด้วยการอ่านข้อมูลแทนการเขียน (อ่านเป็นการกระทำที่เบากว่า)
-          const testQuery = query(collection(db, 'dormitories'), limit(1));
-          await getDocs(testQuery);
-          console.log('Firestore connection successful!');
-        } catch (error) {
-          console.error('Firestore connection test failed:', error);
-          
-          // ตรวจสอบประเภทของข้อผิดพลาด
-          const errorMessage = (error as Error).message || '';
-          if (errorMessage.includes('network') || errorMessage.includes('offline') || errorMessage.includes('unavailable')) {
-            console.error('Network error detected:', errorMessage);
-            alert('ไม่สามารถเชื่อมต่อกับ Firebase ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
-          } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
-            console.error('Permission error detected:', errorMessage);
-            alert('ไม่มีสิทธิ์เข้าถึงข้อมูล Firebase กรุณาตรวจสอบการตั้งค่าสิทธิ์การเข้าถึง');
-          } else {
-            console.error('Unknown Firebase error:', errorMessage);
-            alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับ Firebase: ' + errorMessage);
-          }
+      app = initializeApp(firebaseConfig);
+      isSupported().then(supported => {
+        if (supported) {
+          analytics = getAnalytics(app);
         }
-      };
-      
-      // เรียกใช้ฟังก์ชันทดสอบการเชื่อมต่อ
-      testConnection();
+      });
+      console.log('Firebase initialized');
     } catch (error) {
-      console.error('Error testing Firestore connection:', error);
+      console.error('Error initializing Firebase:', error);
     }
-
-    // Initialize Analytics only in production
-    if (process.env.NODE_ENV === 'production') {
-      isSupported().then(yes => yes && (analytics = getAnalytics(app)));
-    }
-
-    console.log('Firebase services initialized successfully');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-    if (typeof window !== 'undefined') {
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับ Firebase: ' + (error as Error).message);
-    }
+  } else {
+    console.log('Firebase initialization skipped (server-side)');
   }
 } else {
-  console.log('Firebase initialization skipped (server-side)');
+  app = getApps()[0];
 }
 
-// Initialize Firebase Admin SDK
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      }),
-      databaseURL: `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseio.com`
-    });
-    console.log('Firebase Admin SDK initialized');
-  } catch (error) {
-    console.error('Error initializing Firebase Admin SDK:', error);
-  }
-}
+const db = getFirestore();
+const auth = getAuth();
+const storage = getStorage();
 
 export { db, auth, storage, analytics };
