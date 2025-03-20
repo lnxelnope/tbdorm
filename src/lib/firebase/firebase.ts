@@ -1,47 +1,22 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
-import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-};
+// Import service account
+import serviceAccount from '../../config/service-account.json';
 
-console.log('Firebase config:', firebaseConfig);
+// Initialize Firebase Admin
+const apps = getApps();
 
-// Initialize Firebase
-let app;
-let analytics: Analytics | null = null;
-
-if (!getApps().length) {
-  if (typeof window !== 'undefined') {
-    try {
-      app = initializeApp(firebaseConfig);
-      isSupported().then(supported => {
-        if (supported) {
-          analytics = getAnalytics(app);
-        }
-      });
-      console.log('Firebase initialized');
-    } catch (error) {
-      console.error('Error initializing Firebase:', error);
-    }
-  } else {
-    console.log('Firebase initialization skipped (server-side)');
-  }
-} else {
-  app = getApps()[0];
+if (!apps.length) {
+  initializeApp({
+    credential: cert(serviceAccount as any),
+    storageBucket: 'tbdorm-37f43.appspot.com'
+  });
 }
 
-const db = getFirestore();
-const auth = getAuth();
-const storage = getStorage();
-
-export { db, auth, storage, analytics };
+// Export Firebase Admin instances
+export const adminDb = getFirestore();
+export const adminAuth = getAuth();
+export const adminStorage = getStorage();
