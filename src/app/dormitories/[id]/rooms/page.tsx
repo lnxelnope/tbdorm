@@ -143,7 +143,8 @@ function MeterReadingModal({ isOpen, onClose, room, tenant, dormitoryId, previou
     try {
       // เรียกใช้ callback onSuccess ที่ส่งมาจาก parent component
       if (onSuccess) {
-        onSuccess();
+        // เรียกใช้ onSuccess เพื่อรีโหลดข้อมูล
+        await onSuccess();
       }
     } catch (error) {
       console.error("Error reloading data:", error);
@@ -196,14 +197,15 @@ function MeterReadingModal({ isOpen, onClose, room, tenant, dormitoryId, previou
           toast.success("บันทึกค่ามิเตอร์เรียบร้อยแล้ว");
         }
         
-        reloadData();
+        // รีโหลดข้อมูลก่อนปิด modal
+        await reloadData();
         onClose();
       } else {
-        setError("ไม่สามารถบันทึกค่ามิเตอร์ได้");
+        setError(result.error || "เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์");
       }
     } catch (error) {
-      console.error("Error saving meter reading:", error);
-      setError("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      console.error('Error in handleSubmit:', error);
+      setError("เกิดข้อผิดพลาดในการบันทึกค่ามิเตอร์");
     } finally {
       setIsSubmitting(false);
     }
@@ -886,16 +888,16 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       }
       
       toast.success("เพิ่มผู้เช่าเรียบร้อยแล้ว");
-      loadRooms();
       // รีเซ็ตตัวแปร
       setSelectedRoom(null);
     } catch (error) {
       console.error("Error updating room status:", error);
       toast.error("เกิดข้อผิดพลาดในการอัพเดทสถานะห้อง");
     } finally {
-      // โหลดข้อมูลห้องใหม่
-      console.log("Reloading rooms data");
-      loadRooms();
+      // โหลดข้อมูลห้องและผู้เช่าใหม่ทั้งหมด
+      console.log("Reloading rooms and tenants data");
+      await loadRooms();
+      await loadTenants();
     }
   };
 
@@ -1212,6 +1214,19 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูลมิเตอร์ล่าสุด");
     }
   }, [dormId]);
+
+  const handleMeterReadingSuccess = useCallback(async () => {
+    console.log("Reloading data after meter reading update");
+    setShowMeterReadingModal(false);
+    
+    // โหลดข้อมูลใหม่ทั้งหมด
+    await loadRooms();
+    await loadTenants();
+    
+    // รีเซ็ตตัวแปร
+    setSelectedRoom(null);
+    setSelectedTenantForMeter(null);
+  }, [loadRooms, loadTenants]);
 
   if (isLoading) {
     return (
@@ -1784,17 +1799,12 @@ function RoomsPageContent({ dormId }: { dormId: string }) {
       {showMeterReadingModal && selectedRoom && selectedTenantForMeter && !showRoomDetailsModal && !showRentDetailsModal && !showAddTenantModal && (
         <MeterReadingModal
           isOpen={showMeterReadingModal}
-          onClose={() => {
-            setShowMeterReadingModal(false);
-            setSelectedTenantForMeter(null);
-            setPreviousReading(0);
-            // ไม่รีเซ็ต selectedRoom ที่นี่เพื่อให้สามารถกลับมาจัดการห้องเดิมได้
-          }}
+          onClose={() => setShowMeterReadingModal(false)}
           room={selectedRoom}
           tenant={selectedTenantForMeter}
           dormitoryId={dormId}
           previousReading={previousReading}
-          onSuccess={loadRooms}
+          onSuccess={handleMeterReadingSuccess}
         />
       )}
 

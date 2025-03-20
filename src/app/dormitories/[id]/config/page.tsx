@@ -5,7 +5,7 @@ import { Building2, Plus, Save, Trash2, ArrowLeft, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { doc, getDoc, updateDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/firebaseConfig";
+import { db } from "@/lib/firebase/firebase";
 import { toast } from "sonner";
 import { RoomType, DormitoryConfig, Dormitory } from "@/types/dormitory";
 import { getDormitory, updateDormitory } from '@/lib/firebase/firebaseUtils';
@@ -13,6 +13,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { getBillingConditions, saveBillingConditions } from "@/lib/firebase/firebaseUtils";
+import { updateDormitoryConfig } from "@/lib/firebase/firebaseUtils";
 
 interface Config extends Omit<DormitoryConfig, 'createdAt' | 'updatedAt'> {
   createdAt: Date;
@@ -26,11 +27,11 @@ interface DormitoryData {
 
 // เพิ่ม interface สำหรับเงื่อนไขการออกบิล
 interface BillingConditions {
-  allowedDaysBeforeDueDate: number;
   waterBillingType: "perPerson" | "perUnit";
   electricBillingType: "perUnit";
   lateFeeRate: number;
   billingDay: number;
+  dueDay: number; // วันครบกำหนดชำระแบบตายตัว
 }
 
 // เพิ่ม interface สำหรับ AdditionalFeeItem
@@ -38,6 +39,16 @@ interface AdditionalFeeItem {
   id: string;
   name: string;
   amount: number;
+}
+
+// เพิ่ม interface สำหรับ room type ที่มี id
+interface RoomTypeWithId {
+  id: string;
+  name: string;
+  basePrice: number | null;
+  isDefault: boolean;
+  description: string;
+  facilities: string[];
 }
 
 export default function DormitoryConfigPage({ params }: { params: { id: string } }) {
@@ -61,22 +72,33 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
     createdAt: new Date(),
     updatedAt: new Date()
   });
-  const [dueDate, setDueDate] = useState<number>(5); // default to 5th of month
   const [billingConditions, setBillingConditions] = useState<BillingConditions>({
-    allowedDaysBeforeDueDate: 0,
     waterBillingType: "perPerson",
     electricBillingType: "perUnit",
     lateFeeRate: 0,
     billingDay: 1,
+    dueDay: 10, // วันที่ 10 ของเดือนถัดไปเป็นค่าเริ่มต้น
   });
   const [newItemName, setNewItemName] = useState("");
   const [newItemAmount, setNewItemAmount] = useState<number | null>(null);
   const [dormitoryData, setDormitoryData] = useState<Dormitory | null>(null);
 
-  // แปลง roomTypes object เป็น array
-  const roomTypesArray = Object.entries(config.roomTypes).map(([roomId, type]) => ({
-    ...type,
-  }));
+  // สร้าง roomTypesArray ภายใน useMemo เพื่อป้องกันการ re-render ที่ไม่จำเป็น
+  const roomTypesArray = React.useMemo(() => {
+    if (!config.roomTypes) return [];
+    
+    return Object.entries(config.roomTypes).map(([roomId, type]) => {
+      const roomType = type as RoomType;
+      return {
+        id: roomId,
+        name: roomType?.name || '',
+        basePrice: roomType?.basePrice || 0,
+        isDefault: roomType?.isDefault || false,
+        description: roomType?.description || '',
+        facilities: roomType?.facilities || []
+      } as RoomTypeWithId;
+    });
+  }, [config.roomTypes]);
 
   useEffect(() => {
     const fetchDormitory = async () => {
@@ -107,9 +129,16 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
           };
 
           const existingConfig = dormResult.data.config ? {
+            ...defaultConfig,
             ...dormResult.data.config,
-            createdAt: new Date(dormResult.data.config.createdAt),
-            updatedAt: new Date(dormResult.data.config.updatedAt)
+            additionalFees: {
+              ...defaultConfig.additionalFees,
+              ...dormResult.data.config.additionalFees,
+              items: dormResult.data.config.additionalFees?.items || [],
+              floorRates: dormResult.data.config.additionalFees?.floorRates || {}
+            },
+            createdAt: dormResult.data.config.createdAt ? new Date(dormResult.data.config.createdAt) : new Date(),
+            updatedAt: dormResult.data.config.updatedAt ? new Date(dormResult.data.config.updatedAt) : new Date()
           } : defaultConfig;
 
           setConfig(existingConfig);
@@ -131,7 +160,10 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         }
 
         if (billingResult.success && billingResult.data) {
+          console.log("ข้อมูลการตั้งค่าบิลที่ได้รับจาก Firebase:", billingResult.data);
           setBillingConditions(billingResult.data);
+        } else {
+          console.error("ไม่สามารถดึงข้อมูลการตั้งค่าบิลได้:", billingResult.error);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -286,7 +318,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
   };
 
   const getAdditionalFeeValue = (name: string) => {
-    const item = config.additionalFees.items.find(item => item.name === name);
+    const item = config.additionalFees?.items?.find(item => item.name === name);
     return item?.amount ?? '';
   };
 
@@ -306,7 +338,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       ...prev,
       additionalFees: {
         ...prev.additionalFees,
-        items: [...prev.additionalFees.items, newItem]
+        items: [...(prev.additionalFees?.items || []), newItem]
       }
     }));
 
@@ -319,7 +351,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
       ...prev,
       additionalFees: {
         ...prev.additionalFees,
-        items: prev.additionalFees.items.filter(item => item.id !== itemId)
+        items: prev.additionalFees?.items?.filter(item => item.id !== itemId) || []
       }
     }));
   };
@@ -467,7 +499,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                 </button>
               </div>
               <div className="space-y-2">
-                {config.additionalFees.items.map((item) => (
+                {config.additionalFees?.items?.map((item) => (
                   <div key={item.id} className="flex items-center gap-4">
                     <span className="flex-1">{item.name}</span>
                     <span>{item.amount} บาท</span>
@@ -496,7 +528,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                   <div className="relative">
                     <input
                       type="number"
-                      value={config.additionalFees.floorRates[floor.toString()] ?? ''}
+                      value={config.additionalFees?.floorRates?.[floor.toString()] ?? ''}
                       onChange={(e) => {
                         const value = e.target.value;
                         setConfig(prev => ({
@@ -504,7 +536,7 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
                           additionalFees: {
                             ...prev.additionalFees,
                             floorRates: {
-                              ...prev.additionalFees.floorRates,
+                              ...(prev.additionalFees?.floorRates || {}),
                               [floor.toString()]: value === '' ? null : Number(value),
                             },
                           },
@@ -605,20 +637,6 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
         </div>
       </div>
 
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">
-          วันครบกำหนดชำระค่าเช่า (วันที่เท่าไหร่ของเดือน)
-        </label>
-        <input
-          type="number"
-          min="1"
-          max="31"
-          value={dueDate}
-          onChange={(e) => setDueDate(parseInt(e.target.value))}
-          className="w-full max-w-xs p-2 border rounded"
-        />
-      </div>
-
       {/* เพิ่มส่วน UI สำหรับตั้งค่าเงื่อนไขการออกบิล */}
       <Card className="mt-6">
         <CardHeader>
@@ -649,17 +667,23 @@ export default function DormitoryConfigPage({ params }: { params: { id: string }
 
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm font-medium">จำนวนวันที่สามารถออกบิลก่อนถึงกำหนด</label>
-                <p className="text-sm text-gray-500">กำหนดว่าสามารถออกบิลล่วงหน้าได้กี่วันก่อนถึงกำหนดชำระ</p>
+                <label className="text-sm font-medium">วันครบกำหนดชำระ</label>
+                <p className="text-sm text-gray-500">กำหนดวันที่ครบกำหนดชำระของเดือนถัดไป</p>
+                <p className="text-xs text-blue-600 mt-1">
+                  ถ้าวันออกบิลคือวันที่ {billingConditions.billingDay} ของเดือนปัจจุบัน วันครบกำหนดชำระจะเป็นวันที่ {billingConditions.dueDay} ของเดือนถัดไป
+                </p>
               </div>
-              <input
-                type="number"
-                value={billingConditions.allowedDaysBeforeDueDate}
-                onChange={(e) => handleBillingConditionChange('allowedDaysBeforeDueDate', parseInt(e.target.value))}
+              <select
+                value={billingConditions.dueDay}
+                onChange={(e) => handleBillingConditionChange('dueDay', parseInt(e.target.value))}
                 className="w-24 rounded-md border-gray-300"
-                min={0}
-                max={31}
-              />
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex items-center justify-between">

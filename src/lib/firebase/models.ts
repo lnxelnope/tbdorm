@@ -40,7 +40,7 @@ export interface Room {
   floor: number;
   type: 'standard' | 'deluxe' | 'suite';
   basePrice: number;
-  status: 'vacant' | 'occupied' | 'maintenance';
+  status: 'vacant' | 'paid' | 'pending_bill' | 'pending_payment' | 'maintenance';
   features: {
     hasAC: boolean;
     isGroundFloor: boolean;

@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { db } from "@/lib/firebase/firebase";
-import { doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query } from "firebase/firestore";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,56 @@ export default function RoomsTable({ dormitoryId, rooms }: RoomsTableProps) {
   const [roomForMeter, setRoomForMeter] = useState<Room | null>(null);
   const [roomForBill, setRoomForBill] = useState<Room | null>(null);
   const [showBatchBillModal, setShowBatchBillModal] = useState(false);
+  const [dormitoryConfig, setDormitoryConfig] = useState(null);
+  const [tenants, setTenants] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
+
+  // ดึงข้อมูล dormitory config
+  useEffect(() => {
+    const fetchDormitoryConfig = async () => {
+      try {
+        const docRef = doc(db, "dormitories", dormitoryId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setDormitoryConfig(docSnap.data());
+        }
+      } catch (error) {
+        console.error("Error fetching dormitory config:", error);
+      }
+    };
+
+    const fetchTenants = async () => {
+      try {
+        const q = query(collection(db, "dormitories", dormitoryId, "tenants"));
+        const querySnapshot = await getDocs(q);
+        const tenantsData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setTenants(tenantsData);
+      } catch (error) {
+        console.error("Error fetching tenants:", error);
+      }
+    };
+
+    const fetchRoomTypes = async () => {
+      try {
+        const q = query(collection(db, "dormitories", dormitoryId, "roomTypes"));
+        const querySnapshot = await getDocs(q);
+        const roomTypesData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setRoomTypes(roomTypesData);
+      } catch (error) {
+        console.error("Error fetching room types:", error);
+      }
+    };
+
+    fetchDormitoryConfig();
+    fetchTenants();
+    fetchRoomTypes();
+  }, [dormitoryId]);
 
   const handleSelectRoom = (roomId: string) => {
     setSelectedRooms((prev) =>
@@ -335,7 +386,14 @@ export default function RoomsTable({ dormitoryId, rooms }: RoomsTableProps) {
           isOpen={showBatchBillModal}
           onClose={() => setShowBatchBillModal(false)}
           dormitoryId={dormitoryId}
-          selectedRooms={selectedRooms}
+          selectedRooms={rooms.filter(room => selectedRooms.includes(room.id))}
+          tenants={tenants}
+          roomTypes={roomTypes}
+          dormitoryConfig={dormitoryConfig}
+          onSuccess={() => {
+            setShowBatchBillModal(false);
+            router.refresh();
+          }}
         />
       )}
     </>

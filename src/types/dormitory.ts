@@ -55,11 +55,12 @@ export interface Payment {
 }
 
 export interface BillingConditions {
-  allowedDaysBeforeDueDate: number;
   waterBillingType: "perPerson" | "perUnit";
   electricBillingType: "perUnit";
   lateFeeRate: number;
   billingDay: number;
+  gracePeriod?: number;
+  dueDay: number;
 }
 
 export interface AdditionalFees {

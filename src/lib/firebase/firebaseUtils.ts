@@ -143,11 +143,10 @@ export const getDormitory = async (dormitoryId: string): Promise<{ success: bool
         id: dormitorySnap.id,
         ...dormitorySnap.data(),
         billingConditions: billingSnap.exists() ? billingSnap.data() : {
-          allowedDaysBeforeDueDate: 7,
           requireMeterReading: true,
           allowPartialBilling: false,
           minimumStayForBilling: 0,
-          gracePeriod: 7,
+          dueDay: 10, // ค่าเริ่มต้นวันครบกำหนดชำระ = วันที่ 10
           lateFeeRate: 2,
           autoGenerateBill: false
         }
@@ -259,11 +258,13 @@ export const getDormitoryStats = async (dormitoryId: string) => {
       totalRooms++;
 
       switch (room.status) {
-        case "occupied":
-          occupiedRooms++;
+        case "vacant":
+          vacantRooms++;
           break;
-        case "available":
-          availableRooms++;
+        case "paid":
+        case "pending_bill":
+        case "pending_payment":
+          occupiedRooms++; // นับรวมทุกสถานะที่มีผู้เช่า
           break;
         case "maintenance":
           maintenanceRooms++;
@@ -672,7 +673,7 @@ export const updateTenant = async (dormitoryId: string, tenantId: string, data: 
       }
 
       const newRoomData = newRoom.data();
-      if (newRoomData.status === 'occupied') {
+      if (newRoomData.status === 'pending_bill') {
         return { success: false, error: 'ห้องใหม่มีผู้เช่าอยู่แล้ว' };
       }
 
@@ -689,17 +690,17 @@ export const updateTenant = async (dormitoryId: string, tenantId: string, data: 
         updatedAt: serverTimestamp(),
       });
 
-      // อัพเดทสถานะห้องเก่าเป็น available
+      // อัพเดทสถานะห้องเก่าเป็น pending_bill
       if (oldRoom) {
         batch.update(doc(db, `dormitories/${dormitoryId}/rooms`, oldRoom.id), {
-          status: 'available',
+          status: 'pending_bill',
           updatedAt: serverTimestamp(),
         });
       }
 
-      // อัพเดทสถานะห้องใหม่เป็น occupied
-      batch.update(doc(db, `dormitories/${dormitoryId}/rooms`, newRoom.id), {
-        status: 'occupied',
+      // อัพเดทสถานะห้องใหม่เป็น pending_bill
+      await updateDoc(doc(db, `dormitories/${dormitoryId}/rooms`, newRoom.id), {
+        status: 'pending_bill',
         updatedAt: serverTimestamp(),
       });
 
@@ -1226,7 +1227,7 @@ export const getElectricityHistory = async (dormitoryId: string, roomNumber: str
   }
 };
 
-// บันทึกเงื่อนไขการออกบิล
+// ฟังก์ชันบันทึกเงื่อนไขการออกบิล
 export const saveBillingConditions = async (dormitoryId: string, conditions: any) => {
   try {
     const docRef = doc(db, `dormitories/${dormitoryId}/settings/billing`);
@@ -1248,18 +1249,20 @@ export const getBillingConditions = async (dormitoryId: string) => {
     const docSnap = await getDoc(docRef);
     
     if (docSnap.exists()) {
+      console.log("ดึงข้อมูลการตั้งค่าบิลสำเร็จ:", docSnap.data());
       return { success: true, data: docSnap.data() as any };
     }
     
     // ถ้ายังไม่เคยตั้งค่า ใช้ค่าเริ่มต้น
     const defaultConditions: any = {
-      allowedDaysBeforeDueDate: 7,
       waterBillingType: "perPerson",
       electricBillingType: "perUnit",
       lateFeeRate: 2,
-      billingDay: 1
+      billingDay: 1,
+      dueDay: 10, // ค่าเริ่มต้นวันครบกำหนดชำระ = วันที่ 10
     };
     
+    console.log("ไม่พบข้อมูลการตั้งค่าบิล ใช้ค่าเริ่มต้น:", defaultConditions);
     return { success: true, data: defaultConditions };
   } catch (error) {
     console.error('Error getting billing conditions:', error);
@@ -1288,13 +1291,12 @@ export async function initializeDormitoryConfig() {
         floorRates: {},
       },
       billingConditions: {
-        allowedDaysBeforeDueDate: 0,
         requireMeterReading: false,
         waterBillingType: "perPerson",
         electricBillingType: "perUnit",
         allowPartialBilling: false,
         minimumStayForBilling: 0,
-        gracePeriod: 0,
+        dueDay: 10, // ค่าเริ่มต้นวันครบกำหนดชำระ = วันที่ 10
         lateFeeRate: 0,
         autoGenerateBill: false,
       },
@@ -1309,26 +1311,169 @@ export async function initializeDormitoryConfig() {
   return configSnap.data() as DormitoryConfig;
 }
 
-// ปรับปรุงฟังก์ชัน getDormitoryConfig
-export async function getDormitoryConfig() {
+// เพิ่มฟังก์ชันสำหรับย้าย config จากคอลเลกชัน config ไปยังเอกสารของแต่ละหอพัก
+export async function migrateConfigToDormitories() {
+  try {
+    console.log("เริ่มการย้ายข้อมูล config ไปยังแต่ละหอพัก...");
+    
+    // ดึงข้อมูล config ปัจจุบัน
   const configRef = doc(db, 'config', 'dormitory');
   const configSnap = await getDoc(configRef);
   
-  if (!configSnap.exists()) {
-    // ถ้าไม่มีข้อมูล config ให้สร้าง default
-    return initializeDormitoryConfig();
+    // ถ้าไม่มี config เลย ให้ใช้ค่าเริ่มต้น
+    const globalConfig = configSnap.exists() 
+      ? configSnap.data() as DormitoryConfig 
+      : await initializeDormitoryConfig();
+    
+    // ดึงข้อมูลหอพักทั้งหมด
+    const dormitoriesRef = collection(db, 'dormitories');
+    const dormitoriesSnap = await getDocs(dormitoriesRef);
+    
+    // batch update สำหรับอัปเดตหลายเอกสารพร้อมกัน
+    const batch = writeBatch(db);
+    
+    // ไม่มีหอพักเลย
+    if (dormitoriesSnap.empty) {
+      console.log("ไม่พบข้อมูลหอพัก การย้ายข้อมูล config ไม่สามารถดำเนินการได้");
+      return { success: false, message: "ไม่พบข้อมูลหอพัก" };
+    }
+    
+    // อัปเดตหอพักแต่ละแห่ง
+    dormitoriesSnap.forEach((dormDoc) => {
+      const dormitory = { id: dormDoc.id, ...dormDoc.data() } as Dormitory;
+      
+      // ถ้ายังไม่มี config ในหอพัก ให้ใช้ค่า global config
+      if (!dormitory.config) {
+        // อัปเดตหอพักด้วย config
+        batch.update(doc(db, 'dormitories', dormDoc.id), {
+          config: globalConfig,
+          updatedAt: serverTimestamp()
+        });
+      }
+    });
+    
+    // ดำเนินการ batch update
+    await batch.commit();
+    
+    console.log("การย้ายข้อมูล config ไปยังแต่ละหอพักเสร็จสมบูรณ์");
+    return { success: true };
+  } catch (error) {
+    console.error("เกิดข้อผิดพลาดในการย้ายข้อมูล config:", error);
+    return { success: false, error: (error as Error).message };
   }
+}
 
-  return configSnap.data() as {
-    roomRate: number;
-    waterRate: number;
-    electricityRate: number;
-    commonFee: number;
-    additionalServices: Array<{
-      name: string;
-      price: number;
-    }>;
-  };
+// แก้ไขฟังก์ชัน getDormitoryConfig ให้ดึงข้อมูลจากหอพักแทน
+export async function getDormitoryConfig(dormitoryId: string) {
+  try {
+    // ดึงข้อมูลหอพัก
+    const dormitoryRef = doc(db, 'dormitories', dormitoryId);
+    const dormitorySnap = await getDoc(dormitoryRef);
+    
+    if (!dormitorySnap.exists()) {
+      throw new Error(`ไม่พบหอพักที่มี ID: ${dormitoryId}`);
+    }
+    
+    const dormitory = dormitorySnap.data() as Dormitory;
+    
+    // ถ้าหอพักมี config อยู่แล้ว ให้ใช้ค่านั้น
+    if (dormitory.config) {
+      return dormitory.config;
+    }
+    
+    // ถ้าไม่มี config ในหอพัก ให้สร้าง config เริ่มต้น
+    const defaultConfig = {
+      roomTypes: {},
+      additionalFees: {
+        utilities: {
+          water: {
+            perPerson: null,
+          },
+          electric: {
+            unit: null,
+          },
+        },
+        items: [],
+        floorRates: {},
+      },
+      billingConditions: {
+        requireMeterReading: false,
+        waterBillingType: "perPerson",
+        electricBillingType: "perUnit",
+        allowPartialBilling: false,
+        minimumStayForBilling: 0,
+        dueDay: 10, // ค่าเริ่มต้นวันครบกำหนดชำระ = วันที่ 10
+        lateFeeRate: 0,
+        autoGenerateBill: false,
+      }
+    } as DormitoryConfig;
+    
+    // อัปเดตหอพักด้วย config เริ่มต้น
+    await updateDoc(dormitoryRef, {
+      config: defaultConfig,
+      updatedAt: serverTimestamp()
+    });
+    
+    return defaultConfig;
+  } catch (error) {
+    console.error(`เกิดข้อผิดพลาดในการดึงข้อมูล config ของหอพัก ${dormitoryId}:`, error);
+    throw error;
+  }
+}
+
+// แก้ไขฟังก์ชัน updateDormitoryConfig เพื่ออัปเดต config ในหอพัก
+export async function updateDormitoryConfig(dormitoryId: string, configData: Partial<DormitoryConfig>) {
+  try {
+    const dormitoryRef = doc(db, 'dormitories', dormitoryId);
+    
+    // ตรวจสอบว่าหอพักมีอยู่จริง
+    const dormitorySnap = await getDoc(dormitoryRef);
+    if (!dormitorySnap.exists()) {
+      throw new Error(`ไม่พบหอพักที่มี ID: ${dormitoryId}`);
+    }
+    
+    // ดึง config ปัจจุบัน
+    const currentConfig = (dormitorySnap.data() as Dormitory).config || {};
+    
+    // รวม config เก่าและใหม่
+    const mergedConfig = deepMerge(currentConfig, configData);
+    
+    // อัปเดตข้อมูล
+    await updateDoc(dormitoryRef, {
+      'config': mergedConfig,
+      'updatedAt': serverTimestamp()
+    });
+    
+    return { success: true, data: mergedConfig };
+  } catch (error) {
+    console.error(`เกิดข้อผิดพลาดในการอัปเดต config ของหอพัก ${dormitoryId}:`, error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// ฟังก์ชัน utility สำหรับรวมออบเจ็กต์แบบลึก
+function deepMerge(target: any, source: any) {
+  const output = { ...target };
+  
+  if (isObject(target) && isObject(source)) {
+    Object.keys(source).forEach(key => {
+      if (isObject(source[key])) {
+        if (!(key in target)) {
+          Object.assign(output, { [key]: source[key] });
+        } else {
+          output[key] = deepMerge(target[key], source[key]);
+        }
+      } else {
+        Object.assign(output, { [key]: source[key] });
+      }
+    });
+  }
+  
+  return output;
+}
+
+function isObject(item: any) {
+  return (item && typeof item === 'object' && !Array.isArray(item));
 }
 
 export async function getActiveTenants() {

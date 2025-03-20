@@ -57,6 +57,7 @@ interface CreateBillData {
     reminder: boolean;
     overdue: boolean;
   };
+  lateFeeRate: number;
 }
 
 export default function BatchBillModal({ 
@@ -90,10 +91,21 @@ export default function BatchBillModal({
   
   // ดึงข้อมูลรอบบิลและวันครบกำหนดจาก config
   useEffect(() => {
-    if (dormitoryConfig.billingCycle) {
+    // แสดงข้อมูล dormitoryConfig ทั้งหมดที่ได้รับมา
+    console.log("dormitoryConfig ทั้งหมด:", dormitoryConfig);
+    console.log("billingConditions ที่ได้รับ:", dormitoryConfig?.billingConditions);
+    
+    // ใช้ค่าจาก billingConditions ที่ถูกดึงมาจาก settings/billing โดยตรง
+    // billingConditions เป็นส่วนที่ถูกดึงและใส่เข้ามาใน dormitoryConfig โดยตรงในฟังก์ชัน getDormitory
+    if (dormitoryConfig?.billingConditions) {
+      console.log("gracePeriod ที่ได้รับ:", dormitoryConfig.billingConditions.gracePeriod);
+      console.log("ชนิดข้อมูลของ gracePeriod:", typeof dormitoryConfig.billingConditions.gracePeriod);
+      console.log("ค่า gracePeriod แปลงเป็นตัวเลข:", Number(dormitoryConfig.billingConditions.gracePeriod));
+      console.log("isNaN check:", isNaN(Number(dormitoryConfig.billingConditions.gracePeriod)));
+      
       try {
         // กำหนดวันออกบิลตามรอบบิล
-        const billingDay = dormitoryConfig.billingCycle.billingDay || 1;
+        const billingDay = dormitoryConfig.billingConditions.billingDay || 1;
         const currentMonth = currentDate.getMonth();
         const currentYear = currentDate.getFullYear();
         
@@ -105,19 +117,39 @@ export default function BatchBillModal({
         }
         setBillDate(configBillDate);
         
-        // กำหนดวันครบกำหนดชำระ
-        if (dormitoryConfig.billingCycle.gracePeriod) {
-          const graceDays = dormitoryConfig.billingCycle.gracePeriod;
-          const configDueDate = new Date(configBillDate);
-          configDueDate.setDate(configDueDate.getDate() + graceDays);
-          setDueDate(configDueDate);
+        // ใช้ค่า gracePeriod จาก settings/billing โดยตรง
+        const gracePeriod = dormitoryConfig.billingConditions.gracePeriod;
+        
+        // ต้องแน่ใจว่าเป็นตัวเลขหรือสตริงที่แปลงเป็นตัวเลขได้
+        if (gracePeriod !== undefined && gracePeriod !== null) {
+          // วันครบกำหนดคือวันที่ออกบิล + จำนวนวันผ่อนผัน (gracePeriod)
+          const graceDays = Number(gracePeriod);
+          
+          if (!isNaN(graceDays)) {
+            const configDueDate = new Date(configBillDate);
+            configDueDate.setDate(configDueDate.getDate() + graceDays);
+            setDueDate(configDueDate);
+            
+            console.log(`กำหนดวันครบกำหนดชำระจากการตั้งค่า: ออกบิลวันที่ ${configBillDate.getDate()}/${configBillDate.getMonth() + 1}/${configBillDate.getFullYear()} + ระยะเวลาผ่อนผัน ${graceDays} วัน = ${configDueDate.getDate()}/${configDueDate.getMonth() + 1}/${configDueDate.getFullYear()}`);
+          } else {
+            console.warn(`ค่า gracePeriod ไม่สามารถแปลงเป็นตัวเลขได้: ${gracePeriod}`);
+            toast.error("ค่าระยะเวลาผ่อนผันในการตั้งค่าหอพักไม่ถูกต้อง (ไม่ใช่ตัวเลข) กรุณาตั้งค่าในหน้าตั้งค่าหอพักใหม่");
+          }
+        } else {
+          console.warn("ไม่พบค่า gracePeriod ในการตั้งค่าหอพัก หรือค่าไม่ถูกต้อง กรุณาตั้งค่าในหน้าตั้งค่า");
+          toast.error("ไม่พบค่าระยะเวลาผ่อนผันในการตั้งค่าหอพัก หรือค่าไม่ถูกต้อง กรุณาตั้งค่าในหน้าตั้งค่าหอพักก่อนสร้างบิล");
         }
       } catch (error) {
         console.error("เกิดข้อผิดพลาดในการกำหนดวันที่จากค่า config:", error);
-        // ใช้ค่าเริ่มต้นหากเกิดข้อผิดพลาด
+        console.log("dormitoryConfig.billingConditions:", dormitoryConfig.billingConditions);
+        toast.error("เกิดข้อผิดพลาดในการกำหนดวันที่จากค่าการตั้งค่า กรุณาตรวจสอบการตั้งค่าหอพัก");
       }
+    } else {
+      console.warn("ไม่พบการตั้งค่ารอบบิล (billingConditions) ในการตั้งค่าหอพัก");
+      console.log("dormitoryConfig:", dormitoryConfig);
+      toast.error("ไม่พบการตั้งค่ารอบบิลในการตั้งค่าหอพัก กรุณาตั้งค่าในหน้าตั้งค่าหอพักก่อนสร้างบิล");
     }
-  }, [dormitoryConfig]);
+  }, [dormitoryConfig, currentDate, toast]);
   
   // ฟังก์ชันสร้างเลขที่บิล
   const generateBillNumber = () => {
@@ -198,7 +230,7 @@ export default function BatchBillModal({
           items.push({
             name: "ค่าเช่าห้อง",
             type: "rent" as const,
-            amount: roomType.price || 0,
+            amount: roomType.basePrice || 0,
             description: roomType.name
           });
         }
@@ -243,8 +275,33 @@ export default function BatchBillModal({
               items.push({
                 name: service.name,
                 type: "other" as const,
-                amount: service.price || 0,
+                amount: service.amount || 0,
                 description: "บริการเสริม"
+              });
+            }
+          }
+        }
+        
+        // เพิ่มรายการพิเศษของผู้เช่า (เช่น ค่าเช่าอุปกรณ์เพิ่มเติม, ค่าปรับ ฯลฯ)
+        if (tenant.specialItems?.length > 0) {
+          for (const item of tenant.specialItems) {
+            // ตรวจสอบว่ารายการนี้ยังอยู่ในช่วงที่ต้องจ่ายหรือไม่
+            const isActive = item.duration === 0 || // ไม่มีกำหนด
+                           (item.remainingBillingCycles !== undefined && item.remainingBillingCycles > 0); // ยังเหลือรอบบิลที่ต้องจ่าย
+            
+            if (isActive) {
+              // คำนวณงวดปัจจุบันและงวดที่เหลือ
+              let installmentDescription = "รายการพิเศษ";
+              if (item.duration > 0 && item.remainingBillingCycles !== undefined) {
+                const currentInstallment = item.duration - item.remainingBillingCycles + 1;
+                installmentDescription = `งวดที่ ${currentInstallment}/${item.duration} (เหลืออีก ${item.remainingBillingCycles - 1 > 0 ? item.remainingBillingCycles - 1 : 0} งวด)`;
+              }
+              
+              items.push({
+                name: item.name,
+                type: "other" as const,
+                amount: item.amount || 0,
+                description: installmentDescription
               });
             }
           }
@@ -264,6 +321,11 @@ export default function BatchBillModal({
         // คำนวณยอดรวม
         const totalAmount = items.reduce((sum, item) => sum + Number(item.amount), 0);
         
+        // เมื่อมีการกดบันทึก เพื่อคำนวณยอดรวมทั้งหมด
+        const totalAmountWithOtherFees = totalAmount + otherFees.reduce((sum, fee) => {
+          return fee.name && fee.amount > 0 ? sum + Number(fee.amount) : sum;
+        }, 0);
+        
         // สร้างข้อมูลบิล
         const billData: CreateBillData = {
           dormitoryId,
@@ -276,9 +338,10 @@ export default function BatchBillModal({
           dueDate: dueDate,
           status: 'pending',
           items,
-          totalAmount,
+          totalAmount: totalAmountWithOtherFees,
           paidAmount: 0,
-          remainingAmount: totalAmount,
+          remainingAmount: totalAmountWithOtherFees,
+          lateFeeRate: dormitoryConfig.billingConditions?.lateFeeRate || 0,
           payments: [],
           notificationsSent: {
             initial: false,
@@ -357,7 +420,7 @@ export default function BatchBillModal({
                 
                 // คำนวณค่าเช่าห้อง
                 if (includeRent) {
-                  roomTotal += roomType.price || 0;
+                  roomTotal += roomType.basePrice || 0;
                 }
                 
                 // คำนวณค่าน้ำ
@@ -379,7 +442,7 @@ export default function BatchBillModal({
                   for (const serviceId of room.additionalServices) {
                     const service = additionalFeeItems.find(item => item.id === serviceId);
                     if (service) {
-                      roomTotal += service.price || 0;
+                      roomTotal += service.amount || 0;
                     }
                   }
                 }
@@ -391,8 +454,91 @@ export default function BatchBillModal({
                   }
                 });
                 
+                // คำนวณรายการพิเศษของผู้เช่า
+                if (tenant.specialItems?.length > 0) {
+                  const activeItems = tenant.specialItems.filter(item => 
+                    item.duration === 0 || 
+                    (item.remainingBillingCycles !== undefined && item.remainingBillingCycles > 0)
+                  );
+                  
+                  for (const item of activeItems) {
+                    roomTotal += item.amount || 0;
+                  }
+                }
+                
                 return total + roomTotal;
               }, 0).toLocaleString()} บาท
+              
+              {/* แสดงค่าใช้จ่ายเพิ่มเติม (ถ้ามี) */}
+              {otherFees.filter(fee => fee.name && fee.amount > 0).length > 0 && (
+                <div className="mt-1 text-sm text-blue-600">
+                  + ค่าใช้จ่ายเพิ่มเติม: {otherFees.reduce((sum, fee) => {
+                    return fee.name && fee.amount > 0 ? sum + Number(fee.amount) : sum;
+                  }, 0).toLocaleString()} บาท
+                </div>
+              )}
+              
+              {/* แสดงยอดรวมทั้งหมด */}
+              {otherFees.filter(fee => fee.name && fee.amount > 0).length > 0 && (
+                <div className="mt-1 text-base font-semibold text-blue-800">
+                  รวมทั้งสิ้น: {(
+                    selectedRooms.reduce((total, room) => {
+                      const tenant = tenants.find(t => t.roomNumber === room.number);
+                      const roomType = roomTypes.find(type => type.id === room.roomType);
+                      
+                      if (!tenant || !roomType) return total;
+                      
+                      let roomTotal = 0;
+                      
+                      // คำนวณค่าเช่าห้อง
+                      if (includeRent) {
+                        roomTotal += roomType.basePrice || 0;
+                      }
+                      
+                      // คำนวณค่าน้ำ
+                      if (includeWater) {
+                        const waterFeePerPerson = dormitoryConfig?.additionalFees?.utilities?.water?.perPerson || 0;
+                        roomTotal += tenant.numberOfResidents ? waterFeePerPerson * tenant.numberOfResidents : waterFeePerPerson;
+                      }
+                      
+                      // คำนวณค่าไฟ
+                      if (includeElectricity && tenant.electricityUsage) {
+                        const electricityFeePerUnit = dormitoryConfig?.additionalFees?.utilities?.electric?.unit || 0;
+                        roomTotal += tenant.electricityUsage.unitsUsed * electricityFeePerUnit;
+                      }
+                      
+                      // คำนวณค่าบริการเสริม
+                      if (room.additionalServices?.length > 0) {
+                        const additionalFeeItems = dormitoryConfig?.additionalFees?.items || [];
+                        
+                        for (const serviceId of room.additionalServices) {
+                          const service = additionalFeeItems.find(item => item.id === serviceId);
+                          if (service) {
+                            roomTotal += service.amount || 0;
+                          }
+                        }
+                      }
+                      
+                      // คำนวณรายการพิเศษของผู้เช่า
+                      if (tenant.specialItems?.length > 0) {
+                        const activeItems = tenant.specialItems.filter(item => 
+                          item.duration === 0 || 
+                          (item.remainingBillingCycles !== undefined && item.remainingBillingCycles > 0)
+                        );
+                        
+                        for (const item of activeItems) {
+                          roomTotal += item.amount || 0;
+                        }
+                      }
+                      
+                      return total + roomTotal;
+                    }, 0) + 
+                    otherFees.reduce((sum, fee) => {
+                      return fee.name && fee.amount > 0 ? sum + Number(fee.amount) : sum;
+                    }, 0)
+                  ).toLocaleString()} บาท
+                </div>
+              )}
             </div>
           </div>
           
@@ -411,7 +557,7 @@ export default function BatchBillModal({
                 if (tenant && roomType) {
                   // คำนวณค่าเช่าห้อง
                   if (includeRent) {
-                    const rentFee = roomType.price || 0;
+                    const rentFee = roomType.basePrice || 0;
                     roomTotal += rentFee;
                     breakdown.push(`ค่าเช่า: ${rentFee.toLocaleString()} บาท`);
                   }
@@ -440,13 +586,62 @@ export default function BatchBillModal({
                     for (const serviceId of room.additionalServices) {
                       const service = additionalFeeItems.find(item => item.id === serviceId);
                       if (service) {
-                        additionalServiceTotal += service.price || 0;
+                        additionalServiceTotal += service.amount || 0;
                       }
                     }
                     
                     if (additionalServiceTotal > 0) {
                       roomTotal += additionalServiceTotal;
                       breakdown.push(`บริการเสริม: ${additionalServiceTotal.toLocaleString()} บาท`);
+                    }
+                  }
+                  
+                  // คำนวณรายการพิเศษของผู้เช่า
+                  if (tenant.specialItems?.length > 0) {
+                    let specialItemsTotal = 0;
+                    const specialItemDetails: string[] = [];
+                    
+                    const activeItems = tenant.specialItems.filter(item => 
+                      item.duration === 0 || 
+                      (item.remainingBillingCycles !== undefined && item.remainingBillingCycles > 0)
+                    );
+                    
+                    for (const item of activeItems) {
+                      specialItemsTotal += item.amount || 0;
+                      
+                      // เพิ่มรายละเอียดของแต่ละรายการ
+                      if (item.duration > 0 && item.remainingBillingCycles !== undefined) {
+                        const currentInstallment = item.duration - item.remainingBillingCycles + 1;
+                        specialItemDetails.push(`${item.name}: ${item.amount} บาท (งวด ${currentInstallment}/${item.duration})`);
+                      } else {
+                        specialItemDetails.push(`${item.name}: ${item.amount} บาท`);
+                      }
+                    }
+                    
+                    if (specialItemsTotal > 0) {
+                      roomTotal += specialItemsTotal;
+                      breakdown.push(`รายการพิเศษ: ${specialItemsTotal.toLocaleString()} บาท`);
+                      
+                      // เพิ่มรายละเอียดแต่ละรายการไปที่ breakdown
+                      if (specialItemDetails.length > 0) {
+                        breakdown.push(`&nbsp;&nbsp;(${specialItemDetails.join(', ')})`);
+                      }
+                    }
+                  }
+                }
+                
+                // เพิ่มรายการค่าใช้จ่ายอื่นๆ (ที่ผู้ใช้เพิ่มเอง)
+                let otherFeesTotal = 0;
+                if (otherFees.length > 0) {
+                  const validOtherFees = otherFees.filter(fee => fee.name && fee.amount > 0);
+                  if (validOtherFees.length > 0) {
+                    otherFeesTotal = validOtherFees.reduce((sum, fee) => sum + Number(fee.amount), 0);
+                    roomTotal += otherFeesTotal;
+                    
+                    const otherFeeDetails = validOtherFees.map(fee => `${fee.name}: ${fee.amount} บาท`);
+                    breakdown.push(`ค่าใช้จ่ายเพิ่มเติม: ${otherFeesTotal.toLocaleString()} บาท`);
+                    if (otherFeeDetails.length > 0) {
+                      breakdown.push(`  (${otherFeeDetails.join(', ')})`);
                     }
                   }
                 }
@@ -493,11 +688,44 @@ export default function BatchBillModal({
               
               <div className="space-y-2">
                 <Label htmlFor="dueDate">วันครบกำหนดชำระ</Label>
-                <DatePicker
-                  id="dueDate"
-                  selected={dueDate}
-                  onSelect={setDueDate}
-                />
+                <div>
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
+                    <p className="text-xs text-blue-800 font-medium mb-1">วันครบกำหนดชำระถูกคำนวณอัตโนมัติจากการตั้งค่าหอพัก</p>
+                    <div className="grid grid-cols-1 gap-1 text-xs text-blue-700">
+                      <div className="flex justify-between">
+                        <span>วันออกบิล:</span>
+                        <span className="font-medium">{billDate ? format(billDate, 'd MMMM yyyy', { locale: th }) : "-"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>ระยะเวลาผ่อนผัน:</span>
+                        <span className="font-medium">
+                          {dormitoryConfig?.billingConditions?.gracePeriod 
+                            ? `${dormitoryConfig.billingConditions.gracePeriod} วัน` 
+                            : "ไม่ได้ตั้งค่า"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>วันครบกำหนดชำระ:</span>
+                        <span className="font-medium text-green-600">{dueDate ? format(dueDate, 'd MMMM yyyy', { locale: th }) : "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <DatePicker
+                    id="dueDate"
+                    selected={dueDate}
+                    onSelect={setDueDate}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    หมายเหตุ: หากชำระเกินกำหนด จะมีค่าปรับ 
+                    {dormitoryConfig?.billingConditions?.lateFeeRate !== undefined &&
+                     dormitoryConfig?.billingConditions?.lateFeeRate !== null &&
+                     !isNaN(Number(dormitoryConfig?.billingConditions?.lateFeeRate))
+                     ? ` ${dormitoryConfig.billingConditions.lateFeeRate}` 
+                     : " ไม่ได้ตั้งค่า"}% 
+                    ของยอดค้างชำระ ตามการตั้งค่าหอพัก
+                  </p>
+                </div>
               </div>
             </div>
             

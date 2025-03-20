@@ -3,6 +3,7 @@ import { getFirestore, Firestore, connectFirestoreEmulator, collection, doc, set
 import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
 import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
 import { getAnalytics, Analytics, isSupported } from "firebase/analytics";
+import { setupStorageCORS } from "./storage-cors-fix";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -48,6 +49,11 @@ if (typeof window !== 'undefined') {
     auth = getAuth(app);
     db = getFirestore(app);
     storage = getStorage(app);
+    
+    // แก้ไขปัญหา CORS
+    if (typeof window !== 'undefined') {
+      setupStorageCORS();
+    }
 
     // ตรวจสอบการเชื่อมต่อกับ Firestore
     try {

@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, getDoc, writeBatch, limit, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, getDoc, writeBatch, limit, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Bill, MeterReading, PaymentReceipt, PromptPayConfig, BankAccount, Payment, ApiResponse, BillSummary } from '@/types/bill';
 import { getBillingConditions, deletePaymentSlipsByBillId } from './firebaseUtils';
 
@@ -30,6 +30,7 @@ interface CreateBillData {
     reminder: boolean;
     overdue: boolean;
   };
+  outstandingDetails?: any[];
 }
 
 // Bills
@@ -449,31 +450,88 @@ export const updateBillStatus = async (dormitoryId: string, billId: string, data
   status: Bill['status'];
   paidAmount: number;
   remainingAmount?: number;
+  paymentMethod?: string;
+  paymentDate?: Date;
+  paymentNote?: string;
+  paymentSlipUrl?: string;
 }): Promise<ApiResponse<void>> => {
   try {
     const billRef = doc(db, `dormitories/${dormitoryId}/bills/${billId}`);
     
-    // อัปเดตสถานะบิล
-    const updateData: Record<string, any> = {
-      status: data.status,
-      paidAmount: data.paidAmount,
-      updatedAt: Timestamp.now()
-    };
-    
-    // ถ้ามี remainingAmount ให้อัปเดตด้วย
-    if (data.remainingAmount !== undefined) {
-      updateData.remainingAmount = data.remainingAmount;
-    }
-    
-    await updateDoc(billRef, updateData);
-    
-    // ดึงข้อมูลบิลเพื่อหาเลขห้องและรหัสผู้เช่า
+    // ดึงข้อมูลบิลปัจจุบัน
     const billDoc = await getDoc(billRef);
     if (!billDoc.exists()) {
       throw new Error('Bill not found');
     }
     
-    const billData = billDoc.data() as Record<string, any>;
+    const billData = billDoc.data();
+    const now = Timestamp.now();
+    const paymentDate = data.paymentDate ? Timestamp.fromDate(data.paymentDate) : now;
+
+    // สร้างข้อมูลการชำระเงิน
+    if (data.status === 'paid' || data.status === 'partially_paid') {
+      // คำนวณจำนวนเงินที่ชำระเพิ่ม
+      const additionalPayment = data.paidAmount - (billData.paidAmount || 0);
+      
+      if (additionalPayment > 0) {
+        // บันทึกประวัติการชำระเงิน
+        const payment: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'> = {
+          billId,
+          dormitoryId,
+          amount: additionalPayment,
+          method: data.paymentMethod || 'cash',
+          status: 'completed',
+          paidAt: paymentDate,
+          note: data.paymentNote || '',
+          slipUrl: data.paymentSlipUrl || '',
+          tenantId: billData.tenantId,
+          roomNumber: billData.roomNumber
+        };
+
+        // เพิ่มข้อมูลการชำระเงิน
+        await addDoc(collection(db, `dormitories/${dormitoryId}/payments`), {
+          ...payment,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // อัพเดทรายการชำระเงินในบิล
+        const payments = billData.payments || [];
+        payments.push({
+          ...payment,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // อัพเดทข้อมูลบิล
+        const updateData: Record<string, any> = {
+          status: data.status,
+          paidAmount: data.paidAmount,
+          remainingAmount: data.remainingAmount !== undefined ? data.remainingAmount : (billData.totalAmount - data.paidAmount),
+          payments,
+          lastPaymentDate: paymentDate,
+          lastPaymentMethod: data.paymentMethod || 'cash',
+          updatedAt: now
+        };
+
+        // ถ้าชำระครบ ให้เพิ่มวันที่ชำระ
+        if (data.status === 'paid') {
+          updateData.paidAt = paymentDate;
+        }
+
+        await updateDoc(billRef, updateData);
+      }
+    } else {
+      // อัพเดทสถานะอื่นๆ
+      await updateDoc(billRef, {
+        status: data.status,
+        paidAmount: data.paidAmount,
+        remainingAmount: data.remainingAmount !== undefined ? data.remainingAmount : (billData.totalAmount - data.paidAmount),
+        updatedAt: now
+      });
+    }
+    
+    // อัพเดทสถานะห้องและผู้เช่า
     const roomNumber = billData.roomNumber;
     const tenantId = billData.tenantId;
     
@@ -485,72 +543,69 @@ export const updateBillStatus = async (dormitoryId: string, billId: string, data
     if (!roomSnapshot.empty) {
       const roomDoc = roomSnapshot.docs[0];
       const roomRef = doc(db, 'dormitories', dormitoryId, 'rooms', roomDoc.id);
+      const roomData = roomDoc.data();
       
-      // กำหนดสถานะห้องตามสถานะบิล
+      // ตรวจสอบสถานะห้องใหม่
       let newRoomStatus: string;
       
-      if (data.status === 'paid') {
-        // ถ้าชำระเงินครบแล้ว ให้เปลี่ยนสถานะเป็น occupied
-        newRoomStatus = 'occupied';
-      } else if (data.status === 'partially_paid') {
-        // ถ้าชำระเงินบางส่วน ให้คงสถานะ pending_payment
-        newRoomStatus = 'pending_payment';
-      } else if (data.status === 'pending') {
-        // ถ้ายังไม่ชำระเงิน ให้คงสถานะ pending_payment
-        newRoomStatus = 'pending_payment';
+      if (!roomData.tenantId) {
+        // ถ้าไม่มีผู้เช่า
+        newRoomStatus = 'vacant';
       } else {
-        // สถานะอื่นๆ ให้คงสถานะเดิม
-        newRoomStatus = roomDoc.data().status;
-      }
-      
-      // อัปเดตสถานะห้อง
-      await updateDoc(roomRef, {
-        status: newRoomStatus,
-        updatedAt: new Date()
-      });
-      
-      console.log(`Updated room ${roomNumber} status to ${newRoomStatus} based on bill status ${data.status}`);
-      
-      // ถ้ามีการชำระเงิน (paid หรือ partially_paid) ให้อัปเดตข้อมูลผู้เช่า
-      if (data.status === 'paid' || data.status === 'partially_paid') {
-        // ดึงข้อมูลการชำระเงินล่าสุด
-        const paymentsRef = collection(db, `dormitories/${dormitoryId}/payments`);
-        const paymentsQuery = query(
-          paymentsRef,
-          where('billId', '==', billId),
+        // ดึงบิลล่าสุดของห้อง
+        const latestBillQuery = query(
+          collection(db, `dormitories/${dormitoryId}/bills`),
+          where('roomNumber', '==', roomNumber),
           orderBy('createdAt', 'desc'),
           limit(1)
         );
+        const latestBillSnapshot = await getDocs(latestBillQuery);
         
-        const paymentsSnapshot = await getDocs(paymentsQuery);
-        
-        if (!paymentsSnapshot.empty) {
-          const latestPayment = paymentsSnapshot.docs[0].data() as Record<string, any>;
-          const paymentDate = latestPayment.paidAt || latestPayment.createdAt;
-          const paymentMethod = latestPayment.method;
-          
-          // อัปเดตข้อมูลผู้เช่า
-          if (tenantId) {
-            const tenantRef = doc(db, 'dormitories', dormitoryId, 'tenants', tenantId);
-            const tenantDoc = await getDoc(tenantRef);
-            
-            if (tenantDoc.exists()) {
-              const remainingAmount = data.remainingAmount !== undefined ? data.remainingAmount : 0;
-              
-              await updateDoc(tenantRef, {
-                lastPaymentDate: paymentDate,
-                lastPaymentMethod: paymentMethod,
-                outstandingBalance: remainingAmount > 0 ? remainingAmount : 0,
-                updatedAt: new Date()
-              });
-              
-              console.log(`Updated tenant ${tenantId} with payment info`);
-            }
+        if (latestBillSnapshot.empty) {
+          // ถ้ามีผู้เช่าแต่ยังไม่มีบิล
+          newRoomStatus = 'pending_bill';
+        } else {
+          const latestBill = latestBillSnapshot.docs[0].data();
+          if (latestBill.status === 'paid') {
+            // ถ้าบิลล่าสุดชำระแล้ว
+            newRoomStatus = 'paid';
+          } else {
+            // ถ้าบิลล่าสุดยังไม่ชำระ
+            newRoomStatus = 'pending_payment';
           }
         }
       }
-    } else {
-      console.warn(`Room ${roomNumber} not found when updating status based on bill`);
+      
+      // อัพเดทสถานะห้องและวันที่ชำระเงินล่าสุด
+      const roomUpdate: any = {
+        status: newRoomStatus,
+        updatedAt: now
+      };
+
+      // อัพเดทวันที่ชำระเงินล่าสุดเฉพาะเมื่อมีการชำระเงิน
+      if (data.status === 'paid' || data.status === 'partially_paid') {
+        roomUpdate.lastPaymentDate = paymentDate;
+      }
+
+      await updateDoc(roomRef, roomUpdate);
+      
+      // อัพเดทข้อมูลผู้เช่า
+      if (tenantId) {
+        const tenantRef = doc(db, 'dormitories', dormitoryId, 'tenants', tenantId);
+        const tenantDoc = await getDoc(tenantRef);
+        
+        if (tenantDoc.exists()) {
+          const remainingAmount = data.remainingAmount !== undefined ? data.remainingAmount : 0;
+          
+          await updateDoc(tenantRef, {
+            lastPaymentDate: paymentDate,
+            lastPaymentMethod: data.paymentMethod || 'cash',
+            outstandingBalance: remainingAmount,
+            paymentStatus: remainingAmount > 0 ? 'partially_paid' : 'paid',
+            updatedAt: now
+          });
+        }
+      }
     }
     
     return { success: true };
@@ -979,7 +1034,25 @@ export const getRoomPaymentHistory = async (dormitoryId: string, roomId: string)
   }
 };
 
-// เพิ่มฟังก์ชันคำนวณค่าปรับ
+// ฟังก์ชันคำนวณค่าปรับ (ใช้สำหรับคำนวณภายในไฟล์)
+function calculateLateFeeInternal(
+  remainingAmount: number,
+  lateFeeRate: number,
+  dueDate: Date,
+  currentDate: Date
+): number {
+  // คำนวณจำนวนวันที่เลยกำหนด
+  const overdueDays = Math.floor((currentDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (overdueDays <= 0) return 0;
+  
+  // คำนวณค่าปรับ (remainingAmount * (lateFeeRate/100))
+  const lateFee = remainingAmount * (lateFeeRate / 100);
+  
+  return Math.ceil(lateFee); // ปัดขึ้นเป็นจำนวนเต็ม
+}
+
+// ฟังก์ชันคำนวณค่าปรับ (API สำหรับเรียกใช้จากภายนอก)
 export const calculateLateFee = async (dormitoryId: string, billId: string) => {
   try {
     const billResult = await getBill(dormitoryId, billId);
@@ -994,32 +1067,9 @@ export const calculateLateFee = async (dormitoryId: string, billId: string) => {
 
     // ดึงค่า lateFeeRate จากการตั้งค่า
     const billingConditionsResult = await getBillingConditions(dormitoryId);
-    if (!billingConditionsResult.success || !billingConditionsResult.data) {
-      console.error('Error getting billing conditions');
-      // ใช้ค่าเริ่มต้น 2% ถ้าไม่สามารถดึงค่าจากการตั้งค่าได้
-      const lateFeeRate = 2;
-      
-      // คำนวณจำนวนวันที่เกินกำหนด
-      const dueDate = new Date(bill.dueDate);
-      const today = new Date();
-      const diffTime = Math.abs(today.getTime() - dueDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      // คำนวณค่าปรับ (ค่าเริ่มต้น: 2% ของยอดรวม)
-      const lateFee = Math.ceil(bill.totalAmount * (lateFeeRate / 100));
-
-      // อัพเดทบิล
-      const billRef = doc(db, `dormitories/${dormitoryId}/bills/${billId}`);
-      await updateDoc(billRef, {
-        lateFee,
-        updatedAt: Timestamp.now()
-      });
-
-      return { success: true, data: { lateFee, diffDays, lateFeeRate } };
-    }
-    
-    // ใช้ค่า lateFeeRate จากการตั้งค่า
-    const lateFeeRate = billingConditionsResult.data.lateFeeRate || 2; // ค่าเริ่มต้น 2% ถ้าไม่ได้ตั้งค่า
+    const lateFeeRate = billingConditionsResult.success && billingConditionsResult.data?.lateFeeRate 
+      ? billingConditionsResult.data.lateFeeRate 
+      : 2; // ค่าเริ่มต้น 2% ถ้าไม่สามารถดึงค่าจากการตั้งค่าได้
     
     // คำนวณจำนวนวันที่เกินกำหนด
     const dueDate = new Date(bill.dueDate);
@@ -1027,8 +1077,8 @@ export const calculateLateFee = async (dormitoryId: string, billId: string) => {
     const diffTime = Math.abs(today.getTime() - dueDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    // คำนวณค่าปรับ (ใช้ lateFeeRate จากการตั้งค่า)
-    const lateFee = Math.ceil(bill.totalAmount * (lateFeeRate / 100));
+    // คำนวณค่าปรับ
+    const lateFee = calculateLateFeeInternal(bill.remainingAmount, lateFeeRate, dueDate, today);
 
     // อัพเดทบิล
     const billRef = doc(db, `dormitories/${dormitoryId}/bills/${billId}`);
@@ -1044,7 +1094,67 @@ export const calculateLateFee = async (dormitoryId: string, billId: string) => {
   }
 };
 
-// เพิ่มฟังก์ชันสำหรับการส่งแจ้งเตือนบิล
+// แก้ไขฟังก์ชัน updateOverdueBillsAndTenants ให้ใช้ calculateLateFeeInternal
+export async function updateOverdueBillsAndTenants(dormitoryId: string) {
+  try {
+    const currentDate = new Date();
+    
+    // ดึงบิลที่ยังไม่ชำระและเลยกำหนด
+    const billsRef = collection(db, "dormitories", dormitoryId, "bills");
+    const q = query(
+      billsRef,
+      where("status", "in", ["pending", "partially_paid"]),
+      where("dueDate", "<", currentDate)
+    );
+    
+    const overdueSnapshot = await getDocs(q);
+    const batch = writeBatch(db);
+    
+    // เก็บ tenantId ที่ค้างชำระเพื่อไม่ต้องอัพเดทซ้ำ
+    const uniqueTenantIds = new Set<string>();
+    
+    for (const doc of overdueSnapshot.docs) {
+      const billData = doc.data();
+      
+      // อัพเดทสถานะบิลเป็น overdue
+      batch.update(doc.ref, {
+        status: "overdue",
+        // คำนวณค่าปรับ
+        lateFee: calculateLateFeeInternal(
+          billData.remainingAmount,
+          billData.lateFeeRate || 2, // ใช้ค่าเริ่มต้น 2% ถ้าไม่มีการตั้งค่า
+          billData.dueDate.toDate(),
+          currentDate
+        )
+      });
+      
+      uniqueTenantIds.add(billData.tenantId);
+    }
+    
+    // อัพเดทสถานะผู้เช่าที่ค้างชำระ
+    uniqueTenantIds.forEach(tenantId => {
+      const tenantRef = doc(db, "dormitories", dormitoryId, "tenants", tenantId);
+      batch.update(tenantRef, {
+        paymentStatus: "overdue"
+      });
+    });
+    
+    await batch.commit();
+    
+    return {
+      success: true,
+      message: `อัพเดทสถานะบิลค้างชำระ ${overdueSnapshot.size} รายการ และผู้เช่า ${uniqueTenantIds.size} ราย`
+    };
+  } catch (error) {
+    console.error("Error updating overdue bills and tenants:", error);
+    return {
+      success: false,
+      error: "ไม่สามารถอัพเดทสถานะบิลและผู้เช่าที่ค้างชำระได้"
+    };
+  }
+}
+
+// ฟังก์ชันสำหรับการส่งแจ้งเตือนบิล
 export const sendBillNotifications = async (dormitoryId: string) => {
   try {
     const billsRef = collection(db, `dormitories/${dormitoryId}/bills`);
