@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
 import { toast } from 'sonner';
-import { updateBillStatus, getBankAccounts, addPayment } from '@/lib/firebase/billUtils';
+import { updateBillStatus, getBankAccounts, addPayment } from '@firebase/billUtils';
 import { Bill, BankAccount, Payment } from '@/types/bill';
 import Image from 'next/image';
 import { X } from 'lucide-react';
-import { uploadPaymentEvidence } from '@/lib/firebase/storage';
+import { uploadPaymentEvidence } from '@firebase/storage';
 
 interface PaymentModalProps {
   isOpen: boolean;

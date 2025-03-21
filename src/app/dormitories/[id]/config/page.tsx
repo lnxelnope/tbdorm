@@ -8,7 +8,7 @@ import { doc, getDoc, updateDoc, serverTimestamp, setDoc } from "firebase/firest
 import { db } from "@/lib/firebase/firebase";
 import { toast } from "sonner";
 import { RoomType, DormitoryConfig, Dormitory } from "@/types/dormitory";
-import { getDormitory, updateDormitory } from '@/lib/firebase/firebaseUtils';
+import { getDormitory, updateDormitory } from '@firebase/firebaseUtils';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";

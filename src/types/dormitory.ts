@@ -340,3 +340,73 @@ export interface Filters {
   };
   additionalServices: string[];
 }
+
+export interface Tenant {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email?: string;
+  roomId?: string;
+  dormitoryId?: string;
+  moveInDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantWithBillStatus extends Tenant {
+  billStatus?: {
+    currentBill?: {
+      id: string;
+      status: string;
+      totalAmount: number;
+      remainingAmount: number;
+      dueDate: string;
+    };
+    lastBill?: {
+      id: string;
+      status: string;
+      totalAmount: number;
+      remainingAmount: number;
+      dueDate: string;
+    };
+  };
+}
+
+export interface TenantHistory {
+  id: string;
+  tenantId: string;
+  dormitoryId: string;
+  roomId: string;
+  moveInDate: string;
+  moveOutDate?: string;
+  reason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBillData {
+  dormitoryId: string;
+  roomId: string;
+  roomNumber: string;
+  tenantId: string;
+  tenantName: string;
+  month: number;
+  year: number;
+  dueDate: Date;
+  status: string;
+  items: BillItem[];
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  payments: Payment[];
+  notificationsSent: {
+    billCreated: boolean;
+    billDueReminder: boolean;
+    billOverdue: boolean;
+  };
+}
+
+export interface BillsListProps {
+  config: DormitoryConfig;
+}

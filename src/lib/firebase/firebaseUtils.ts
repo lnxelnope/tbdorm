@@ -1,10 +1,9 @@
-import { auth, db } from "./firebase";
+import { auth, db, storage } from "./firebaseConfig";
 import {
   signOut,
   GoogleAuthProvider,
   signInWithRedirect,
   getRedirectResult as _getRedirectResult,
-  getAuth,
 } from "firebase/auth";
 import {
   collection,
@@ -27,22 +26,23 @@ import {
   limit,
 } from "firebase/firestore";
 import {
-  Room,
-  RoomType,
-  UtilityReading,
-  Bill,
-  Payment,
-  PromptPayConfig,
-  LineNotifyConfig,
-  Dormitory,
-  DormitoryConfig,
-  AdditionalFeeItem,
-  BillingConditions,
-  MeterReading
-} from "@/types/dormitory";
-import { Tenant } from "@/types/tenant";
-import { ApiResponse } from '@/types/api';
-import { getStorage, ref, deleteObject, listAll, uploadBytes, getDownloadURL } from "firebase/storage";
+  ref,
+  deleteObject,
+  listAll,
+  uploadBytes,
+  getDownloadURL
+} from "firebase/storage";
+import { Dormitory as DormitoryModel, Room as RoomModel, UtilityReading as UtilityReadingModel, Bill as BillModel, MaintenanceRequest, Notification, FraudAlert, RoomType as RoomTypeModel } from './models';
+import { ApiResponse } from '../../types/api';
+import { Tenant } from "../../types/tenant";
+import {
+  Dormitory, DormitoryConfig, Room, UtilityReading, Bill, Payment, 
+  PromptPayConfig, LineNotifyConfig, MeterReading, BillingConditions, RoomType
+} from "../../types/dormitory";
+import { adminDb } from './firebase-admin';
+import { getApp } from 'firebase/app';
+
+const app = getApp();
 
 // Constants
 const COLLECTIONS = {
@@ -77,51 +77,19 @@ export const handleRedirectResult = async () => {
 };
 
 // Dormitory functions
-export interface DormitoryConfig {
-  roomTypes: Record<string, RoomType>;
-  additionalFees: {
-    utilities: {
-      water: {
-        perPerson: number | null;
-      };
-      electric: {
-        unit: number | null;
-      };
-    };
-    items: AdditionalFeeItem[];
-    floorRates: Record<string, number | null>;
+export interface DormitoryData extends Omit<DormitoryModel, 'id' | 'createdAt' | 'updatedAt'> {
+  config?: {
+    roomTypes: Record<string, RoomTypeModel>;
   };
-  createdAt: any;
-  updatedAt: any;
 }
 
-export interface DormitoryData extends Omit<Dormitory, 'config'> {
-  totalFloors?: number;
-  floors?: number;
-  facilities?: string[];
-  status?: string;
-  description?: string;
-  phone?: string;
-  location?: any;
-  config?: DormitoryConfig;
-}
-
-export const addDormitory = async (data: Omit<DormitoryData, 'id' | 'createdAt' | 'updatedAt'>) => {
+export const addDormitory = async (data: DormitoryData) => {
   try {
     const docRef = await addDoc(collection(db, 'dormitories'), {
-      name: data.name,
-      address: data.address,
-      totalFloors: data.totalFloors,
-      floors: data.totalFloors,
+      ...data,
       config: {
         roomTypes: {},
       },
-      facilities: data.facilities || [],
-      images: data.images || [],
-      status: data.status || 'active',
-      description: data.description,
-      phone: data.phone,
-      location: data.location,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -241,38 +209,38 @@ export const queryDormitories = async (): Promise<{ success: boolean; data?: Dor
 
 export const getDormitoryStats = async (dormitoryId: string) => {
   try {
-    // ดึงข้อมูลห้องทั้งหมดของหอพัก
-    const roomsRef = collection(db, "rooms");
-    const q = query(roomsRef, where("dormitoryId", "==", dormitoryId));
-    const querySnapshot = await getDocs(q);
+    const roomsRef = collection(db, `dormitories/${dormitoryId}/rooms`);
+    const roomsSnapshot = await getDocs(roomsRef);
+    const rooms = roomsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Room[];
 
-    // นับจำนวนห้องตามสถานะ
-    let totalRooms = 0;
+    let totalRooms = rooms.length;
     let occupiedRooms = 0;
-    let availableRooms = 0;
+    let vacantRooms = 0;
     let maintenanceRooms = 0;
+    let totalRevenue = 0;
     let totalRent = 0;
 
-    querySnapshot.forEach((doc) => {
-      const room = doc.data();
-      totalRooms++;
-
+    rooms.forEach(room => {
       switch (room.status) {
         case "vacant":
           vacantRooms++;
           break;
-        case "paid":
-        case "pending_bill":
-        case "pending_payment":
-          occupiedRooms++; // นับรวมทุกสถานะที่มีผู้เช่า
+        case "occupied":
+          occupiedRooms++;
           break;
         case "maintenance":
           maintenanceRooms++;
           break;
       }
+
+      if (room.rent) {
+        totalRent += room.rent;
+      }
     });
 
-    // คำนวณอัตราการเข้าพัก
     const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
 
     return {
@@ -280,18 +248,18 @@ export const getDormitoryStats = async (dormitoryId: string) => {
       data: {
         totalRooms,
         occupiedRooms,
-        availableRooms,
+        vacantRooms,
         maintenanceRooms,
         occupancyRate,
-        averageRent: 0, // จะคำนวณเมื่อมีข้อมูลค่าเช่า
-        totalRevenue: 0, // จะคำนวณเมื่อมีข้อมูลรายได้
-      },
+        averageRent: totalRooms > 0 ? totalRent / totalRooms : 0,
+        totalRevenue
+      }
     };
   } catch (error) {
     console.error("Error getting dormitory stats:", error);
     return {
       success: false,
-      error: "เกิดข้อผิดพลาดในการดึงข้อมูลสถิติ",
+      error: "เกิดข้อผิดพลาดในการดึงข้อมูลสถิติหอพัก"
     };
   }
 };
@@ -334,25 +302,18 @@ export const addRoom = async (dormitoryId: string, data: Omit<Room, "id">) => {
   }
 };
 
-export const getRoom = async (dormitoryId: string, roomId: string) => {
+export async function getRoom(roomId: string) {
   try {
-    const docSnap = await getDoc(doc(db, `dormitories/${dormitoryId}/rooms`, roomId));
-    if (docSnap.exists()) {
-      return { 
-        success: true, 
-        data: { 
-          id: docSnap.id, 
-          ...docSnap.data() 
-        } as Room 
-      };
-    } else {
-      return { success: false, error: 'Room not found' };
+    const roomDoc = await getDoc(doc(db, 'rooms', roomId));
+    if (!roomDoc.exists()) {
+      return { success: false, error: 'ไม่พบข้อมูลห้องพัก' };
     }
+    return { success: true, data: roomDoc.data() as Room };
   } catch (error) {
     console.error('Error getting room:', error);
-    return { success: false, error };
+    return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลห้องพัก' };
   }
-};
+}
 
 interface UpdateRoomResult {
   success: boolean;
@@ -631,20 +592,42 @@ export const updateAllTenantsOutstandingBalance = async (dormitoryId: string) =>
   }
 };
 
-export const queryTenants = async (dormitoryId: string): Promise<{ success: boolean; data?: Tenant[] }> => {
+export async function queryTenants(dormitoryId: string) {
   try {
-    const tenantsRef = collection(db, "dormitories", dormitoryId, "tenants");
-    const tenantsSnapshot = await getDocs(tenantsRef);
-    const tenants = tenantsSnapshot.docs.map((doc) => ({
+    const tenantsQuery = query(
+      collection(db, 'tenants'),
+      where('dormitoryId', '==', dormitoryId)
+    );
+    const querySnapshot = await getDocs(tenantsQuery);
+    const tenants = querySnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt,
-      updatedAt: doc.data().updatedAt?.toDate?.() || doc.data().updatedAt
+      ...doc.data()
     })) as Tenant[];
     return { success: true, data: tenants };
   } catch (error) {
-    console.error("Error querying tenants:", error);
-    return { success: false };
+    console.error('Error querying tenants:', error);
+    return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลผู้เช่า' };
+  }
+}
+
+export const getTenant = async (dormitoryId: string, tenantId: string) => {
+  try {
+    const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, tenantId);
+    const tenantSnap = await getDoc(tenantRef);
+    
+    if (!tenantSnap.exists()) {
+      return { success: false, error: 'ไม่พบข้อมูลผู้เช่า' };
+    }
+    
+    const tenant = {
+      id: tenantSnap.id,
+      ...tenantSnap.data()
+    } as Tenant;
+    
+    return { success: true, data: tenant };
+  } catch (error) {
+    console.error('Error getting tenant:', error);
+    return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลผู้เช่า' };
   }
 };
 
@@ -872,7 +855,7 @@ export const deleteAllUtilityReadings = async (dormitoryId: string) => {
   }
 };
 
-// Bill Functions
+// Bill functions
 export const createBillLegacy = async (dormitoryId: string, data: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => {
   console.warn('createBillLegacy is deprecated, please use createBill from billUtils.ts instead');
   // โค้ดของฟังก์ชัน
@@ -1360,389 +1343,5 @@ export async function migrateConfigToDormitories() {
   } catch (error) {
     console.error("เกิดข้อผิดพลาดในการย้ายข้อมูล config:", error);
     return { success: false, error: (error as Error).message };
-  }
-}
-
-// แก้ไขฟังก์ชัน getDormitoryConfig ให้ดึงข้อมูลจากหอพักแทน
-export async function getDormitoryConfig(dormitoryId: string) {
-  try {
-    // ดึงข้อมูลหอพัก
-    const dormitoryRef = doc(db, 'dormitories', dormitoryId);
-    const dormitorySnap = await getDoc(dormitoryRef);
-    
-    if (!dormitorySnap.exists()) {
-      throw new Error(`ไม่พบหอพักที่มี ID: ${dormitoryId}`);
-    }
-    
-    const dormitory = dormitorySnap.data() as Dormitory;
-    
-    // ถ้าหอพักมี config อยู่แล้ว ให้ใช้ค่านั้น
-    if (dormitory.config) {
-      return dormitory.config;
-    }
-    
-    // ถ้าไม่มี config ในหอพัก ให้สร้าง config เริ่มต้น
-    const defaultConfig = {
-      roomTypes: {},
-      additionalFees: {
-        utilities: {
-          water: {
-            perPerson: null,
-          },
-          electric: {
-            unit: null,
-          },
-        },
-        items: [],
-        floorRates: {},
-      },
-      billingConditions: {
-        requireMeterReading: false,
-        waterBillingType: "perPerson",
-        electricBillingType: "perUnit",
-        allowPartialBilling: false,
-        minimumStayForBilling: 0,
-        dueDay: 10, // ค่าเริ่มต้นวันครบกำหนดชำระ = วันที่ 10
-        lateFeeRate: 0,
-        autoGenerateBill: false,
-      }
-    } as DormitoryConfig;
-    
-    // อัปเดตหอพักด้วย config เริ่มต้น
-    await updateDoc(dormitoryRef, {
-      config: defaultConfig,
-      updatedAt: serverTimestamp()
-    });
-    
-    return defaultConfig;
-  } catch (error) {
-    console.error(`เกิดข้อผิดพลาดในการดึงข้อมูล config ของหอพัก ${dormitoryId}:`, error);
-    throw error;
-  }
-}
-
-// แก้ไขฟังก์ชัน updateDormitoryConfig เพื่ออัปเดต config ในหอพัก
-export async function updateDormitoryConfig(dormitoryId: string, configData: Partial<DormitoryConfig>) {
-  try {
-    const dormitoryRef = doc(db, 'dormitories', dormitoryId);
-    
-    // ตรวจสอบว่าหอพักมีอยู่จริง
-    const dormitorySnap = await getDoc(dormitoryRef);
-    if (!dormitorySnap.exists()) {
-      throw new Error(`ไม่พบหอพักที่มี ID: ${dormitoryId}`);
-    }
-    
-    // ดึง config ปัจจุบัน
-    const currentConfig = (dormitorySnap.data() as Dormitory).config || {};
-    
-    // รวม config เก่าและใหม่
-    const mergedConfig = deepMerge(currentConfig, configData);
-    
-    // อัปเดตข้อมูล
-    await updateDoc(dormitoryRef, {
-      'config': mergedConfig,
-      'updatedAt': serverTimestamp()
-    });
-    
-    return { success: true, data: mergedConfig };
-  } catch (error) {
-    console.error(`เกิดข้อผิดพลาดในการอัปเดต config ของหอพัก ${dormitoryId}:`, error);
-    return { success: false, error: (error as Error).message };
-  }
-}
-
-// ฟังก์ชัน utility สำหรับรวมออบเจ็กต์แบบลึก
-function deepMerge(target: any, source: any) {
-  const output = { ...target };
-  
-  if (isObject(target) && isObject(source)) {
-    Object.keys(source).forEach(key => {
-      if (isObject(source[key])) {
-        if (!(key in target)) {
-          Object.assign(output, { [key]: source[key] });
-        } else {
-          output[key] = deepMerge(target[key], source[key]);
-        }
-      } else {
-        Object.assign(output, { [key]: source[key] });
-      }
-    });
-  }
-  
-  return output;
-}
-
-function isObject(item: any) {
-  return (item && typeof item === 'object' && !Array.isArray(item));
-}
-
-export async function getActiveTenants() {
-  try {
-    console.log("เริ่มดึงข้อมูลผู้เช่า...");
-
-    // ดึงข้อมูลจากคอลเลคชั่น rooms
-    const roomsRef = collection(db, 'rooms');
-    const roomsSnapshot = await getDocs(roomsRef);
-    
-    console.log("จำนวนห้องทั้งหมด:", roomsSnapshot.size);
-
-    // แสดงข้อมูลแต่ละห้อง
-    roomsSnapshot.docs.forEach(doc => {
-      console.log("ข้อมูลห้อง:", {
-        roomId: doc.id,
-        data: doc.data()
-      });
-    });
-
-    // กรองเฉพาะห้องที่มีผู้เช่า
-    const activeRooms = roomsSnapshot.docs
-      .map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        tenantId: doc.data().tenantId,
-        status: doc.data().status
-      }))
-      .filter(room => room.tenantId && room.status === 'active');
-
-    console.log("ห้องที่มีผู้เช่าและสถานะ active:", activeRooms);
-
-    return activeRooms as any[];
-  } catch (error) {
-    console.error("Error getting active tenants:", error);
-    throw error;
-  }
-}
-
-export async function getTenant(dormitoryId: string, tenantId: string) {
-  try {
-    const docRef = doc(db, "dormitories", dormitoryId, "tenants", tenantId);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists()) {
-      return {
-        success: true,
-        data: {
-          id: docSnap.id,
-          ...docSnap.data()
-        }
-      };
-    }
-
-    return {
-      success: false,
-      error: "Tenant not found"
-    };
-  } catch (error) {
-    console.error("Error getting tenant:", error);
-    return {
-      success: false,
-      error: "Failed to get tenant"
-    };
-  }
-}
-
-// ฟังก์ชันสำหรับย้ายข้อมูลผู้เช่าไปยังประวัติ
-export const moveTenantToHistory = async (
-  dormitoryId: string,
-  tenantId: string,
-  leaveReason: 'incorrect_data' | 'end_contract',
-  note?: string
-) => {
-  try {
-    if (!dormitoryId || !tenantId) {
-      return { success: false, error: 'ไม่ได้ระบุข้อมูลที่จำเป็น' };
-    }
-
-    // 1. ดึงข้อมูลผู้เช่า
-    const tenantRef = doc(db, `dormitories/${dormitoryId}/tenants`, tenantId);
-    const tenantSnap = await getDoc(tenantRef);
-    
-    if (!tenantSnap.exists()) {
-      return { success: false, error: 'ไม่พบข้อมูลผู้เช่า' };
-    }
-
-    const tenantData = tenantSnap.data() as Tenant;
-    
-    // 2. สร้างประวัติผู้เช่า
-    const historyRef = collection(db, `dormitories/${dormitoryId}/tenant-history`);
-    const historyData = {
-      ...tenantData,
-      tenantId: tenantId,
-      leaveDate: new Date().toISOString(),
-      leaveReason,
-      note,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    const batch = writeBatch(db);
-
-    // เพิ่มประวัติผู้เช่า
-    const newHistoryRef = doc(historyRef);
-    batch.set(newHistoryRef, historyData);
-
-    // ตรวจสอบและอัพเดทสถานะห้อง (ถ้ามี)
-    if (tenantData.roomNumber) {
-      // ค้นหาห้องจาก roomNumber
-      const roomsRef = collection(db, `dormitories/${dormitoryId}/rooms`);
-      const q = query(roomsRef, where('number', '==', tenantData.roomNumber));
-      const roomsSnap = await getDocs(q);
-      
-      if (!roomsSnap.empty) {
-        const roomDoc = roomsSnap.docs[0];
-        batch.update(doc(db, `dormitories/${dormitoryId}/rooms`, roomDoc.id), {
-          status: 'available',
-          updatedAt: serverTimestamp()
-        });
-      }
-    }
-
-    // ลบข้อมูลผู้เช่า
-    batch.delete(tenantRef);
-
-    // ดำเนินการทั้งหมดพร้อมกัน
-    await batch.commit();
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error moving tenant to history:', error);
-    return { success: false, error: 'เกิดข้อผิดพลาดในการย้ายข้อมูลผู้เช่าไปยังประวัติ' };
-  }
-};
-
-// ฟังก์ชันดึงประวัติผู้เช่า
-export const getTenantHistory = async (dormitoryId: string) => {
-  try {
-    if (!dormitoryId) {
-      return { success: false, error: 'ไม่ได้ระบุรหัสหอพัก' };
-    }
-
-    const historyRef = collection(db, `dormitories/${dormitoryId}/tenant-history`);
-    const q = query(historyRef, orderBy('leaveDate', 'desc'));
-    const snapshot = await getDocs(q);
-
-    const history = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    console.log("getTenantHistory data:", history);
-
-    // Fetch dormitory names
-    const historyWithDormNames = await Promise.all(history.map(async (record:any) => {
-      if (!record.dormitoryId) {
-        return record; // Skip if no dormitoryId
-      }
-      const dormitory = await getDormitory(record.dormitoryId);
-      return {
-        ...record,
-        dormitoryName: dormitory.success && dormitory.data ? dormitory.data.name : 'Unknown',
-      };
-    }));
-
-    return { success: true, data: historyWithDormNames };
-  } catch (error) {
-    console.error('Error getting tenant history:', error);
-    return { success: false, error: 'เกิดข้อผิดพลาดในการดึงข้อมูลประวัติผู้เช่า' };
-  }
-};
-
-export const updateRoomStatus = async (dormitoryId: string, roomId: string, status: Room['status']): Promise<ApiResponse<boolean>> => {
-  try {
-    const roomRef = doc(db, 'dormitories', dormitoryId, 'rooms', roomId);
-    await updateDoc(roomRef, {
-      status,
-      updatedAt: new Date()
-    });
-    
-    return {
-      success: true,
-      data: true
-    };
-  } catch (error) {
-    console.error('Error updating room status:', error);
-    return {
-      success: false,
-      error: 'เกิดข้อผิดพลาดในการอัพเดทสถานะห้อง'
-    };
-  }
-};
-
-/**
- * ลบรูปภาพทั้งหมดที่เกี่ยวข้องกับบิล
- * @param dormitoryId - รหัสหอพัก
- * @param billId - รหัสบิล
- */
-export async function deletePaymentSlipsByBillId(dormitoryId: string, billId: string): Promise<void> {
-  try {
-    const storage = getStorage();
-    const slipsRef = ref(storage, `payment-slips/${dormitoryId}/${billId}`);
-    
-    try {
-      // ดึงรายการไฟล์ทั้งหมดในโฟลเดอร์
-      const listResult = await listAll(slipsRef);
-      
-      // ลบไฟล์ทีละไฟล์
-      const deletePromises = listResult.items.map(itemRef => {
-        return deleteObject(itemRef)
-          .catch(error => {
-            console.error(`Error deleting file ${itemRef.fullPath}:`, error);
-          });
-      });
-      
-      // รอให้ลบไฟล์ทั้งหมดเสร็จสิ้น
-      await Promise.all(deletePromises);
-    } catch (listError) {
-      console.error(`Error listing files in folder payment-slips/${dormitoryId}/${billId}:`, listError);
-      
-      // ตรวจสอบว่าเป็นข้อผิดพลาด CORS หรือไม่
-      if (listError instanceof Error && 
-          (listError.message.includes('CORS') || 
-           listError.message.includes('access control') || 
-           listError.message.includes('cross-origin'))) {
-        console.warn('CORS error detected. This might be due to CORS configuration issues.');
-        console.warn('Please make sure your Firebase Storage CORS settings include your development domain.');
-        console.warn('You can update CORS settings in the Firebase Console or using the Firebase CLI.');
-      }
-    }
-  } catch (error) {
-    console.error('Error in deletePaymentSlipsByBillId:', error);
-  }
-}
-
-/**
- * อัปโหลดรูปภาพไปยัง Firebase Storage
- * @param file - ไฟล์ที่ต้องการอัปโหลด
- * @param path - พาธที่ต้องการเก็บไฟล์ใน Storage
- * @returns URL ของไฟล์ที่อัปโหลด
- */
-export async function uploadImage(file: File, path: string): Promise<string> {
-  try {
-    const storage = getStorage();
-    const timestamp = Date.now();
-    const filename = `${timestamp}_${file.name}`;
-    const fullPath = `${path}/${filename}`;
-    const storageRef = ref(storage, fullPath);
-    
-    // ตั้งค่า metadata เพื่อแก้ไขปัญหา CORS
-    const metadata = {
-      contentType: file.type,
-      customMetadata: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Content-Length, Content-Encoding, Content-Disposition'
-      }
-    };
-    
-    // อัปโหลดไฟล์พร้อม metadata
-    await uploadBytes(storageRef, file, metadata);
-    
-    // ดึง URL ของไฟล์
-    const downloadURL = await getDownloadURL(storageRef);
-    
-    return downloadURL;
-  } catch (error) {
-    console.error("Error uploading image:", error);
-    throw error;
   }
 }

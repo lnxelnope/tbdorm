@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { MaintenanceRequest } from '@/types/maintenance';
-import { updateMaintenanceStatus } from '@/lib/firebase/maintenanceUtils';
+import { updateMaintenanceStatus } from '@firebase/maintenanceUtils';
 import { toast } from 'sonner';
 import { AlertCircle, Clock, CheckCircle2, XCircle } from 'lucide-react';
 

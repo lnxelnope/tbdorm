@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { getMaintenanceRequests, getMaintenanceStats } from '@/lib/firebase/maintenanceUtils';
+import { getMaintenanceRequests, getMaintenanceStats } from '@firebase/maintenanceUtils';
 import { MaintenanceRequest, MaintenanceStats } from '@/types/maintenance';
 import { toast } from 'sonner';
 import { Wrench, AlertCircle, Clock, CheckCircle2, XCircle } from 'lucide-react';

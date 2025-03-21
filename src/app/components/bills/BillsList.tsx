@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getActiveTenants } from '@/lib/firebase/firebaseUtils';
+import { getActiveTenants } from '@firebase/firebaseUtils';
 import { getBillStatus } from '@/lib/bills/billUtils';
 import { useRouter } from 'next/navigation';
 import { Zap } from 'lucide-react';

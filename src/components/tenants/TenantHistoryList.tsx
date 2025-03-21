@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy, Timestamp, deleteDoc, doc, updateDoc, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase/firebase';
+import { db } from '@firebase/firebase';
 import type { Dormitory } from '@/types/dormitory';
 import { Search, ChevronUp, ChevronDown, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';

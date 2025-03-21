@@ -25,6 +25,24 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@components/*": [
+        "./src/app/components/*"
+      ],
+      "@lib/*": [
+        "./src/lib/*"
+      ],
+      "@utils/*": [
+        "./src/lib/utils/*"
+      ],
+      "@hooks/*": [
+        "./src/lib/hooks/*"
+      ],
+      "@contexts/*": [
+        "./src/lib/contexts/*"
+      ],
+      "@firebase/*": [
+        "./src/lib/firebase/*"
       ]
     }
   },

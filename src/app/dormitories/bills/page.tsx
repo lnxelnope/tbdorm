@@ -64,10 +64,18 @@ import {
 import BillDetailsModal from "@/components/bills/BillDetailsModal";
 import PaymentModal from "./components/PaymentModal";
 
-export default function BillsPage() {
+export default async function BillsPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  const dormId = searchParams?.dormId as string;
+  const dormitoryId = searchParams?.dormitoryId as string;
+  const statusParam = searchParams?.status as string;
+  const roomIdParam = searchParams?.roomId as string;
+
   const { user } = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
   
   const [loading, setLoading] = useState(true);
   const [dormitories, setDormitories] = useState<Dormitory[]>([]);
@@ -104,19 +112,11 @@ export default function BillsPage() {
           }
           
           // If dormitory ID is in URL params, select it
-          const dormId = searchParams.get("dormId");
-          if (dormId && dormitoriesData.data.some(dorm => dorm.id === dormId)) {
-            setSelectedDormitory(dormId);
-          }
-          
-          // ตรวจสอบพารามิเตอร์ dormitoryId ด้วย
-          const dormitoryId = searchParams.get("dormitoryId");
           if (dormitoryId && dormitoriesData.data.some(dorm => dorm.id === dormitoryId)) {
             setSelectedDormitory(dormitoryId);
           }
           
           // ตรวจสอบพารามิเตอร์ status
-          const statusParam = searchParams.get("status");
           if (statusParam) {
             setStatusFilter(statusParam);
           }
@@ -128,7 +128,7 @@ export default function BillsPage() {
     };
     
     loadDormitories();
-  }, [user, searchParams]);
+  }, [user, dormitoryId, statusParam]);
   
   // Load bills, rooms, and tenants when dormitory is selected
   useEffect(() => {
@@ -168,7 +168,6 @@ export default function BillsPage() {
           const yearMatch = bill.year === yearFilter;
           
           // ตรวจสอบ roomId จาก URL
-          const roomIdParam = searchParams.get("roomId");
           const roomMatch = !roomIdParam || bill.roomId === roomIdParam;
           
           return statusMatch && monthMatch && yearMatch && roomMatch;
@@ -185,7 +184,7 @@ export default function BillsPage() {
     };
 
     loadData();
-  }, [selectedDormitory, statusFilter, monthFilter, yearFilter, searchParams]);
+  }, [selectedDormitory, statusFilter, monthFilter, yearFilter, roomIdParam]);
   
   // Filter bills based on search term
   const filteredBills = useMemo(() => {
@@ -283,7 +282,6 @@ export default function BillsPage() {
           const yearMatch = bill.year === yearFilter;
           
           // ตรวจสอบ roomId จาก URL
-          const roomIdParam = searchParams.get("roomId");
           const roomMatch = !roomIdParam || bill.roomId === roomIdParam;
           
           return statusMatch && monthMatch && yearMatch && roomMatch;
@@ -320,7 +318,6 @@ export default function BillsPage() {
           const yearMatch = bill.year === yearFilter;
           
           // ตรวจสอบ roomId จาก URL
-          const roomIdParam = searchParams.get("roomId");
           const roomMatch = !roomIdParam || bill.roomId === roomIdParam;
           
           return statusMatch && monthMatch && yearMatch && roomMatch;

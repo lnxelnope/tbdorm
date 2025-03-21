@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
-import { updateBankAccountConfig } from '@/lib/firebase/billsUtils';
+import { updateBankAccountConfig } from '@firebase/billsUtils';
 
 const schema = z.object({
   bankName: z.string().min(1, 'กรุณาระบุชื่อธนาคาร'),

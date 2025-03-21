@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { createBill } from '@/lib/firebase/billUtils';
+import { createBill } from '@firebase/billUtils';
 import { Bill, BillItem } from '@/types/bill';
 import { Room } from '@/types/dormitory';
 import { Button } from '@/components/ui/button';

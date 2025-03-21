@@ -1,30 +1,32 @@
 export interface Bill {
   id: string;
   dormitoryId: string;
-  roomId: string;
-  roomNumber: string;
   tenantId: string;
-  tenantName: string;
+  roomId: string;
   month: number;
   year: number;
-  dueDate: string | Date;
-  createdAt: string | Date;
-  status: 'pending' | 'paid' | 'partially_paid' | 'overdue' | 'cancelled';
+  dueDate: string;
   items: BillItem[];
+  status: "pending" | "paid" | "overdue" | "partially_paid";
   totalAmount: number;
+  remainingAmount: number;
   paidAmount: number;
-  payments: Payment[];
-  notes?: string;
+  payments?: Payment[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BillItem {
-  id?: string;
   name: string;
-  type: 'rent' | 'water' | 'electric' | 'other';
   amount: number;
-  unit?: number;
-  price?: number;
   description?: string;
+  quantity?: number;
+  unitPrice?: number;
+  utilityReading?: {
+    previousReading: number;
+    currentReading: number;
+    unitsUsed: number;
+  };
 }
 
 export interface MeterReading {
@@ -76,13 +78,19 @@ export interface BankAccount {
 }
 
 export interface Payment {
-  id?: string;
+  id: string;
+  billId: string;
+  dormitoryId: string;
+  tenantId: string;
   amount: number;
-  method: string;
-  date: string | Date;
-  recordedBy?: string;
-  createdBy?: string;
-  createdAt?: string | Date;
+  method: 'cash' | 'bank_transfer' | 'promptpay';
+  paidAt: Date;
+  reference?: string;
+  evidence?: string;
+  status: string;
+  note?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'promptpay';

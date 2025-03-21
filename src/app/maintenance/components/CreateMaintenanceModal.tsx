@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Dialog } from '@headlessui/react';
 import { toast } from 'sonner';
-import { createMaintenanceRequest, uploadMaintenanceImage } from '@/lib/firebase/maintenanceUtils';
+import { createMaintenanceRequest, uploadMaintenanceImage } from '@firebase/maintenanceUtils';
 import Image from 'next/image';
 
 const schema = z.object({

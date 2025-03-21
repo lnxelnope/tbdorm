@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
-import { updatePromptPayConfig } from '@/lib/firebase/billsUtils';
+import { updatePromptPayConfig } from '@firebase/billsUtils';
 
 const schema = z.object({
   promptPayId: z.string().min(1, 'กรุณาระบุหมายเลข PromptPay'),
