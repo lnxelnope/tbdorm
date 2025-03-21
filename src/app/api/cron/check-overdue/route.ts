@@ -1,4 +1,4 @@
-import { adminDb } from '@/lib/firebase/firebase-admin';
+import { adminDb } from '../../../../lib/firebase/firebase-admin';
 import { NextResponse } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 
